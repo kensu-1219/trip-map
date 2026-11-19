@@ -139,5 +139,5 @@ tests/                單元測試＋端對端測試
 ```bash
 node --test tests/core.test.js     # 29 項單元測試
 pip install playwright pillow
-python3 tests/e2e.py               # 59 項端對端測試（模擬外部服務），截圖輸出到 tests/out/
+python3 tests/e2e.py               # 61 項端對端測試（模擬外部服務），截圖輸出到 tests/out/
 ```

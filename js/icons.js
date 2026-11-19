@@ -75,6 +75,9 @@
     theme: '<path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.8-.8 1.8-1.7 0-1.2-1-1.6-1-2.6 0-1 .8-1.7 1.9-1.7H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3z"/><rect x="6.5" y="10.5" width="2.2" height="2.2"/><rect x="9.5" y="6.5" width="2.2" height="2.2"/><rect x="14" y="6.5" width="2.2" height="2.2"/>',
     trash: '<path d="M4 6.5h16M9.5 6.5V3.5h5v3M6 6.5l1 14h10l1-14M10 10.5v6M14 10.5v6"/>',
     next: '<path d="M5 12h13M13 6.5l5.5 5.5-5.5 5.5"/>',
+    grip: '<rect x="8" y="5" width="2.4" height="2.4" fill="currentColor"/><rect x="13.6" y="5" width="2.4" height="2.4" fill="currentColor"/><rect x="8" y="10.8" width="2.4" height="2.4" fill="currentColor"/><rect x="13.6" y="10.8" width="2.4" height="2.4" fill="currentColor"/><rect x="8" y="16.6" width="2.4" height="2.4" fill="currentColor"/><rect x="13.6" y="16.6" width="2.4" height="2.4" fill="currentColor"/>',
+    expand: '<path d="M6 9l6 6 6-6"/>',
+    collapse: '<path d="M18 15l-6-6-6 6"/>',
     filter: '<path d="M3.5 4.5h17l-6.5 8v6l-4 2v-8z"/>',
   };
   const sprite = '<svg xmlns="http://www.w3.org/2000/svg" style="display:none">' +

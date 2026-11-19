@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.4.0';
+  const VERSION = '1.5.0';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -249,7 +249,14 @@
     const total = t.places.reduce((a, p) => a + (p.cost || 0), 0);
     if (total) h += '<div class="muted small">' + I('money') + ' 預估總花費 ' + (t.currency ? esc(t.currency) + ' ' : '') + fmtMoney(total) + '</div>';
     const days = f ? [f] : range(t.days);
-    for (const d of days) h += dayBlock(t, d);
+    const big = t.places.length > 120 && !f;
+    S.ui.open = S.ui.open || {};
+    for (const d of days) {
+      if (big && !S.ui.open[t.id + ':' + d]) {
+        const n = C.dayStops(t, d).length;
+        h += '<div class="day collapsed" style="--c:' + dc(d) + '"><div class="day-h"><b>DAY ' + String(d).padStart(2, '0') + '</b> <span>' + dayDate(t, d) + '</span><span class="day-tools"><button class="btn sm" data-act="openDay" data-d="' + d + '">' + I('expand') + ' 展開 ' + n + ' 站</button></span></div></div>';
+      } else h += dayBlock(t, d);
+    }
     const un = t.places.filter((p) => !p.day || p.day > t.days);
     if (un.length && !f) {
       h += '<div class="day"><div class="day-h" style="--c:#888"><b>未排入（' + un.length + '）</b><span class="muted">按「自動排行程」或在地點上選天數</span></div>' +
@@ -293,15 +300,16 @@
     const reorder = S.ui.reorder && !unassigned;
     const warn = tm && p.hours ? C.hoursWarning(p.hours, tm.arrive, tm.depart) : null;
     const cur = t.currency ? esc(t.currency) + ' ' : '';
-    return '<div class="stop' + (p.done ? ' is-done' : '') + '" data-id="' + p.id + '">' +
+    return '<div class="stop' + (p.done ? ' is-done' : '') + (reorder ? ' can-drag' : '') + '" data-id="' + p.id + '">' +
+      (reorder ? '<span class="grip" title="按住拖曳排序">' + I('grip') + '</span>' : '') +
       '<span class="num" style="--c:' + dc(unassigned ? 0 : p.day) + '"><span>' + (unassigned ? '·' : p.order + 1) + '</span></span>' +
       '<span class="cat" title="' + C.CATS[p.cat].label + '">' + catIc(p.cat) + '</span>' +
       '<span class="grow"><a href="#" data-act="focus" data-id="' + p.id + '">' + esc(p.name) + '</a>' + (p.locked ? ' <span title="已鎖定在這天" class="muted">' + I('lock') + '</span>' : '') +
       '<br>' + (tm ? '<span class="time">' + C.hm(tm.arrive) + '–' + C.hm(tm.depart) + '</span> ' : '') +
       '<span class="muted">停留 ' + C.fmtDur((p.stay || 0) * 60) + (p.cost ? ' · ' + cur + fmtMoney(p.cost) : '') + (p.note ? ' · ' + esc(p.note.slice(0, 40)) : '') + '</span>' +
       (warn ? '<br><span class="warnline">' + I('warn') + ' ' + esc(warn) + '</span>' : '') + '</span>' +
-      (reorder ? '<button class="icon-btn sm" data-act="up" data-id="' + p.id + '"' + (i === 0 ? ' disabled' : '') + ' title="往前">' + I('up') + '</button>' +
-        '<button class="icon-btn sm" data-act="down" data-id="' + p.id + '"' + (i === n - 1 ? ' disabled' : '') + ' title="往後">' + I('down') + '</button>' : '') +
+      (reorder ? '<button class="icon-btn sm updown" data-act="up" data-id="' + p.id + '"' + (i === 0 ? ' disabled' : '') + ' title="往前">' + I('up') + '</button>' +
+        '<button class="icon-btn sm updown" data-act="down" data-id="' + p.id + '"' + (i === n - 1 ? ' disabled' : '') + ' title="往後">' + I('down') + '</button>' : '') +
       (reorder || unassigned ? '<select class="daysel" data-act="moveDay" data-id="' + p.id + '" title="移到哪一天"><option value="0"' + (p.day ? '' : ' selected') + '>未排</option>' +
         range(t.days).map((d) => '<option value="' + d + '"' + (p.day === d ? ' selected' : '') + '>D' + d + '</option>').join('') + '</select>' : '') +
       (reorder ? '' : '<button class="icon-btn sm tick' + (p.done ? ' on' : '') + '" data-act="toggleDone" data-id="' + p.id + '" title="' + (p.done ? '已去過（再按取消）' : '打卡：標記已去過') + '">' + I(p.done ? 'done' : 'undone') + '</button>') +
@@ -1170,6 +1178,60 @@
     window.addEventListener('resize', () => { if (isMobile()) setSheet(S.data.flags.sheet || 'half'); else { p.style.height = ''; map.invalidateSize(); } });
   }
 
+  /* ---------- 站點拖曳排序（調整順序模式） ---------- */
+  function bindStopDrag() {
+    const body = $('#tabBody');
+    let dg = null;
+    body.addEventListener('pointerdown', (e) => {
+      const g = e.target.closest('.grip'); if (!g) return;
+      const row = g.closest('.stop'); const day = row.closest('.day');
+      const rows = [...day.querySelectorAll('.stop.can-drag')];
+      dg = { row, rows, id: row.dataset.id, y0: e.clientY, s0: body.scrollTop, rects: rows.map((r) => r.getBoundingClientRect()), from: rows.indexOf(row), to: rows.indexOf(row), pid: e.pointerId };
+      row.classList.add('dragging');
+      try { g.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ }
+      e.preventDefault();
+    });
+    const mark = () => {
+      dg.rows.forEach((r) => r.classList.remove('drop-before', 'drop-after'));
+      if (dg.to === dg.from) return;
+      const tgt = dg.rows[dg.to];
+      tgt.classList.add(dg.to > dg.from ? 'drop-after' : 'drop-before');
+    };
+    window.addEventListener('pointermove', (e) => {
+      if (!dg || e.pointerId !== dg.pid) return;
+      const scrollD = body.scrollTop - dg.s0;
+      const dy = e.clientY - dg.y0 + scrollD;
+      dg.row.style.transform = 'translateY(' + dy + 'px)';
+      const r0 = dg.rects[dg.from];
+      const mid = r0.top + r0.height / 2 + dy;
+      // 新位置＝其他站中「中線在拖曳列中線之上」的數量
+      let to = 0;
+      dg.rects.forEach((r, i) => { if (i !== dg.from && r.top + r.height / 2 < mid) to++; });
+      dg.to = to; mark();
+      // 靠近邊緣自動捲動
+      const br = body.getBoundingClientRect();
+      if (e.clientY < br.top + 40) body.scrollTop -= 12; else if (e.clientY > br.bottom - 40) body.scrollTop += 12;
+      e.preventDefault();
+    }, { passive: false });
+    const end = () => {
+      if (!dg) return;
+      const { from, to, id } = dg;
+      dg.row.style.transform = ''; dg.row.classList.remove('dragging');
+      dg.rows.forEach((r) => r.classList.remove('drop-before', 'drop-after'));
+      dg = null;
+      if (from === to) return;
+      snapshot();
+      const t = trip(); const p = t.places.find((x) => x.id === id);
+      const stops = C.dayStops(t, p.day);
+      stops.splice(from, 1); stops.splice(to, 0, p);
+      stops.forEach((s2, k) => { s2.order = k; });
+      save(); renderPanel(true); renderMap(false);
+      toast('已調整順序', 4000, undoAct);
+    };
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+  }
+
   /* ================= 綁定事件 ================= */
   function renderTripSelect() {
     $('#tripSelect').innerHTML = S.data.trips.map((t) => '<option value="' + t.id + '"' + (t.id === S.data.current ? ' selected' : '') + '>' + (t.synced ? '⟲ ' : '') + esc(t.name) + '（' + t.places.length + '）</option>').join('') + '<option value="__new">＋ 新增旅程…</option>';
@@ -1184,6 +1246,7 @@
       setSheet(p.classList.contains('mini') || p.classList.contains('peek') ? 'half' : p.classList.contains('half') ? 'full' : 'mini');
     });
     bindSheetDrag();
+    bindStopDrag();
     $('#tripSelect').addEventListener('change', (e) => {
       if (e.target.value === '__new') { renderTripSelect(); askText('新旅程', '旅程名稱', '', (name) => { const n = C.newTrip(name || '新旅程'); S.data.trips.push(n); S.data.current = n.id; save(); renderAll(true); }); return; }
       S.data.current = e.target.value; S.ui.dayFilter = todayIndex(trip()) || 0; S.ui.measure = { a: '', b: '' }; S.ui.catFilter = ''; save({ silent: true }); renderAll(true);
@@ -1250,6 +1313,7 @@
         case 'nearbyClose': S.ui.nearby = null; nearbyLayer.clearLayers(); renderPanel(); break;
         case 'toggleDone': { const p = t.places.find((x) => x.id === id); if (p) { p.done = !p.done; save(); renderPanel(true); renderMap(false); if (p.done) toast('已打卡「' + p.name + '」', 4000, { label: '取消', fn: () => { p.done = false; save(); renderAll(); } }); } break; }
         case 'reorder': S.ui.reorder = !S.ui.reorder; renderPanel(true); break;
+        case 'openDay': S.ui.open = S.ui.open || {}; S.ui.open[t.id + ':' + el.dataset.d] = true; renderPanel(true); break;
         case 'catFilter': S.ui.catFilter = el.dataset.c; renderPanel(true); break;
         case 'gotoToday': S.ui.dayFilter = +el.dataset.d; renderPanel(true); renderMap(true); break;
         case 'clAdd': clAdd(); break;
