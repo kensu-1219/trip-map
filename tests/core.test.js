@@ -263,3 +263,34 @@ test('新欄位：分類、打卡、營業時間、花費、主題、清單 往�
   const z = C.sanitizeTrip({ theme: 'evil', places: [{ name: 'a', lat: 1, lng: 1, cat: 'xx', cost: -5 }] });
   assert.equal(z.theme, 'auto'); assert.equal(z.places[0].cost, 0); assert.ok(C.CATS[z.places[0].cat]);
 });
+
+test('附近搜尋：Overpass 查詢與解析（中文名優先、去重、依距離排序）', () => {
+  const q = C.overpassQuery('food', 35.7, 139.8, 700);
+  assert.ok(q.includes('around:700,35.700000,139.800000') && q.includes('restaurant'));
+  const r = C.parseOverpass({ elements: [
+    { type: 'node', lat: 35.701, lon: 139.8, tags: { name: 'Far Ramen', 'name:zh': '遠拉麵', cuisine: 'ramen' } },
+    { type: 'way', center: { lat: 35.7001, lon: 139.8001 }, tags: { name: '近い食堂' } },
+    { type: 'node', lat: 35.7001, lon: 139.8001, tags: { name: '近い食堂' } },
+    { type: 'node', lat: 35.7002, lon: 139.8, tags: {} },
+  ] }, { lat: 35.7, lng: 139.8 }, 'food');
+  assert.equal(r.length, 2);
+  assert.equal(r[0].name, '近い食堂');
+  assert.equal(r[1].name, '遠拉麵');
+  assert.equal(r[1].sub, 'ramen');
+  assert.equal(r[0].cat, 'food');
+  const t = C.parseOverpass({ elements: [{ lat: 35.7, lon: 139.8, tags: { amenity: 'toilets' } }] }, { lat: 35.7, lng: 139.8 }, 'toilet');
+  assert.equal(t[0].name, '公共廁所');
+});
+
+test('票價格式與 .ics 行事曆', () => {
+  assert.equal(C.fmtFare({ currencyCode: 'JPY', units: '210' }), '¥210');
+  assert.equal(C.fmtFare({ currencyCode: 'USD', units: '2', nanos: 750000000 }), 'US$2.75');
+  assert.equal(C.fmtFare(null), '');
+  const ics = C.buildICS('東京, 3天', [{ date: '2026-12-20', start: 9 * 60 + 18, end: 10 * 60 + 18, title: 'D1 ⛩️ 淺草寺; 雷門', location: '東京', desc: '早上去\nhttps://x', lat: 35.7148, lng: 139.7967, uid: 'a-b' }]);
+  assert.ok(ics.includes('DTSTART:20261220T091800') && ics.includes('DTEND:20261220T101800'));
+  assert.ok(ics.includes('SUMMARY:D1 ⛩️ 淺草寺\; 雷門'));
+  assert.ok(ics.includes('X-WR-CALNAME:東京\\, 3天'));
+  assert.ok(ics.includes('GEO:35.714800;139.796700'));
+  assert.ok(ics.split('\r\n').every((l) => new TextEncoder().encode(l).length <= 75), '每行不超過 75 bytes');
+  assert.ok(ics.startsWith('BEGIN:VCALENDAR') && ics.trim().endsWith('END:VCALENDAR'));
+});

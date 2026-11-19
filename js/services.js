@@ -173,11 +173,20 @@
     }));
   }
 
+  const overpassQueue = makeQueue(1, 1000);
+  async function nearby(kind, origin, radius) {
+    const q = C.overpassQuery(kind, origin.lat, origin.lng, radius || 700);
+    const j = await overpassQueue(() => fetchJSON('https://overpass-api.de/api/interpreter', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q),
+    }, 20000));
+    return C.parseOverpass(j, origin, kind);
+  }
+
   async function testGoogleKey(key) {
     const a = { lat: 35.681236, lng: 139.767125 }, b = { lat: 35.714765, lng: 139.796655 };
     const r = await googleTransit(a, b, key);
     return r;
   }
 
-  window.TripServices = { LS, peekLeg, getLeg, geocode, testGoogleKey, clearRouteCache, fetchJSON };
+  window.TripServices = { LS, peekLeg, getLeg, geocode, testGoogleKey, clearRouteCache, fetchJSON, nearby };
 })();

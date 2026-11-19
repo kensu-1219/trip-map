@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.3.0';
+  const VERSION = '1.4.0';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -49,7 +49,7 @@
   const findPoint = (t, id) => (id === 'base' ? t.base : id === 'me' ? S.ui.me : t.places.find((p) => p.id === id));
 
   /* ================= 地圖 ================= */
-  let map, markerLayer, routeLayer, tileLayer, meLayer;
+  let map, markerLayer, routeLayer, tileLayer, meLayer, nearbyLayer;
   const TILES = {
     osm: { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', attr: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', max: 19 },
     carto: { url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', attr: '&copy; OpenStreetMap &copy; CARTO', max: 20 },
@@ -64,7 +64,10 @@
     routeLayer = L.layerGroup().addTo(map);
     markerLayer = L.layerGroup().addTo(map);
     meLayer = L.layerGroup().addTo(map);
+    nearbyLayer = L.layerGroup().addTo(map);
     map.on('click', onMapClick);
+    const lbl = () => document.getElementById('map').classList.toggle('show-labels', map.getZoom() >= 15);
+    map.on('zoomend', lbl); lbl();
   }
   function setTiles() {
     let k = settings().tiles;
@@ -91,6 +94,7 @@
       const cls = (dim(p) ? 'dim ' : '') + (p.done ? 'done' : '');
       const m = L.marker([p.lat, p.lng], { icon: pinIcon(dc(p.day), '', cls, catIc(p.cat), num), title: p.name, zIndexOffset: dim(p) ? -100 : 0 });
       m.bindPopup(() => popupHtml(p), { maxWidth: 260 });
+      if (!dim(p) && t.places.length <= 300) m.bindTooltip(esc(p.name.length > 14 ? p.name.slice(0, 13) + '…' : p.name), { permanent: true, direction: 'right', offset: [14, 0], className: 'plabel' });
       m.addTo(markerLayer);
     }
     if (t.base) {
@@ -140,6 +144,7 @@
       '<a class="btn sm" href="' + esc(C.gmapsPlaceUrl(p)) + '" target="_blank" rel="noopener">Google 地圖</a>' +
       '<button class="btn sm" data-act="measureFrom" data-id="' + p.id + '">從這裡量</button>' +
       '<button class="btn sm" data-act="measureTo" data-id="' + p.id + '">量到這裡</button>' +
+      '<button class="btn sm" data-act="nearbyFrom" data-id="' + p.id + '">' + I('search') + ' 附近</button>' +
       (isBase ? '' : '<button class="btn sm" data-act="edit" data-id="' + p.id + '">編輯</button>') +
       '</div></div>';
   }
@@ -302,6 +307,7 @@
       (reorder ? '' : '<button class="icon-btn sm tick' + (p.done ? ' on' : '') + '" data-act="toggleDone" data-id="' + p.id + '" title="' + (p.done ? '已去過（再按取消）' : '打卡：標記已去過') + '">' + I(p.done ? 'done' : 'undone') + '</button>') +
       '<button class="icon-btn sm" data-act="edit" data-id="' + p.id + '" title="編輯">' + I('edit') + '</button></div>';
   }
+  const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || '#b0533b';
   const fmtMoney = (n) => Math.round(n).toLocaleString('en-US');
 
   function legRow(t, li) {
@@ -317,7 +323,7 @@
     const status = r.estimated ? (li.mode === 'transit' && !settings().gkey ? '估算' : r.error ? '估算（' + esc(r.error) + '）' : '估算中…') : (r.source === 'google' ? 'Google' : '實際路線');
     return '<div class="leg">' +
       '<div class="modes">' + Object.entries(C.MODES).map(([k, m]) => '<button class="mode' + (k === li.mode ? ' on' : '') + '" data-act="mode" data-key="' + esc(li.key) + '" data-mode="' + k + '" title="' + m.label + '">' + I(MODE_IC[k]) + '</button>').join('') + '</div>' +
-      '<div class="leg-info"><b>' + (r.estimated ? '約 ' : '') + C.fmtDur(r.duration) + '</b> · ' + C.fmtDist(r.distance) + ' <span class="muted">(' + status + (r.note ? '，' + esc(r.note) : '') + ')</span>' + detail + '</div>' +
+      '<div class="leg-info"><b>' + (r.estimated ? '約 ' : '') + C.fmtDur(r.duration) + '</b> · ' + C.fmtDist(r.distance) + (r.fare ? ' · <b>' + esc(C.fmtFare(r.fare)) + '</b>' : '') + ' <span class="muted">(' + status + (r.note ? '，' + esc(r.note) : '') + ')</span>' + detail + '</div>' +
       (a && b ? '<a class="btn sm ghost" target="_blank" rel="noopener" href="' + esc(C.gmapsDirUrl(a, b, li.mode)) + '" title="在 Google Maps 導航">' + I('nav') + '</a>' : '') +
       '</div>';
   }
@@ -346,7 +352,7 @@
 
   function renderAdd() {
     const geo = S.ui.geo;
-    let h = sec('// Add · 新增地點') + '<label class="lbl">貼上 Google Maps 連結、座標或地名（可一次貼多行）</label>' +
+    let h = nearbyHtml() + sec('// Add · 新增地點') + '<label class="lbl">貼上 Google Maps 連結、座標或地名（可一次貼多行）</label>' +
       '<textarea id="addInput" rows="3" placeholder="例：https://www.google.com/maps/place/...&#10;或：35.7148, 139.7967&#10;或：清水寺"></textarea>' +
       '<div class="row gap"><button class="btn primary grow" data-act="addGo">加入／搜尋</button><button class="btn" data-act="pickAdd">' + I('map') + ' 在地圖上點</button></div>';
     if (S.ui.addMsg) h += '<div class="msg">' + S.ui.addMsg + '</div>';
@@ -396,7 +402,7 @@
         }
         const steps = r.steps && r.steps.length ? '<div class="steps">' + r.steps.map((s) => s.walk ? I('walk') + Math.max(1, Math.round(s.sec / 60)) + '分' : stepIc(s.icon) + ' ' + esc(s.line) + ' ' + esc(s.from) + '→' + esc(s.to)).join(' › ') + '</div>' : '';
         const tag = r.estimated ? (k === 'transit' && !settings().gkey ? '估算' : r.error ? '估算' : '查詢中…') : (r.source === 'google' ? 'Google' : '實際路線');
-        h += '<div class="mrow"><span class="micon">' + I(MODE_IC[k]) + '</span><span class="grow"><b>' + m.label + '</b> ' + (r.estimated ? '約 ' : '') + C.fmtDur(r.duration) + ' · ' + C.fmtDist(r.distance) +
+        h += '<div class="mrow"><span class="micon">' + I(MODE_IC[k]) + '</span><span class="grow"><b>' + m.label + '</b> ' + (r.estimated ? '約 ' : '') + C.fmtDur(r.duration) + ' · ' + C.fmtDist(r.distance) + (r.fare ? ' · ' + esc(C.fmtFare(r.fare)) : '') +
           ' <span class="muted">(' + tag + ')</span>' + (r.note ? '<br><span class="muted">' + esc(r.note) + '</span>' : '') + steps + '</span>' +
           '<a class="btn sm ghost" target="_blank" rel="noopener" href="' + esc(C.gmapsDirUrl(a, b, k)) + '">Google</a></div>';
       }
@@ -519,6 +525,69 @@
         '<button class="btn sm" data-act="toggleDone" data-id="' + next.id + '">' + I('done') + ' 打卡</button></div>';
     } else if (stops.length) h += '<div class="muted small">今天的行程都完成了，辛苦了！</div>';
     return h + '</div>';
+  }
+
+  /* ================= 附近搜尋 ================= */
+  function nearbyHtml() {
+    const nb = S.ui.nearby;
+    if (!nb) return sec('// Nearby · 附近') + '<div class="row gap wrap"><button class="btn" data-act="nearbyCenter">' + I('search') + ' 搜尋地圖中心附近</button><span class="muted small">或點地圖上的地點 →「附近」</span></div>';
+    let h = sec('// Nearby · ' + esc(nb.origin.name) + ' 附近') +
+      '<div class="chips catchips">' + Object.entries(C.NEARBY).map(([k, v]) => '<button class="chip ic-chip' + (nb.kind === k ? ' on' : '') + '" data-act="nearbyKind" data-k="' + k + '">' + catIc(v.cat === 'other' ? (k === 'toilet' ? 'other' : 'other') : v.cat) + ' ' + v.label + '</button>').join('') +
+      '<button class="chip ic-chip" data-act="nearbyClose" title="關閉">' + I('close') + '</button></div>';
+    if (nb.loading) h += '<div class="msg">' + I('search') + ' 搜尋中…</div>';
+    else if (nb.error) h += '<div class="msg warn">' + I('warn') + ' ' + esc(nb.error) + '</div>';
+    else if (nb.list) {
+      if (!nb.list.length) h += '<div class="empty sm">步行範圍內沒找到。可以把地圖移到別處，再按「搜尋地圖中心附近」。</div>';
+      else h += '<div class="results">' + nb.list.map((r, i) => '<div class="nrow"><span class="cat">' + catIc(r.cat) + '</span><span class="grow"><b>' + esc(r.name) + '</b><br><span class="muted">' +
+        I('walk') + ' ' + C.fmtDist(r.dist * 1.25) + ' · 約 ' + C.fmtDur(C.estimateLeg(r.dist, 'walk').duration) + (r.sub ? ' · ' + esc(r.sub.slice(0, 50)) : '') + '</span></span>' +
+        '<a class="icon-btn sm" target="_blank" rel="noopener" href="' + esc(C.gmapsDirUrl(nb.origin, r, 'walk')) + '" title="步行導航">' + I('nav') + '</a>' +
+        (r.added ? '<span class="icon-btn sm tick on" title="已加入">' + I('check') + '</span>' : '<button class="icon-btn sm" data-act="nearbyAdd" data-i="' + i + '" title="加入行程地點">' + I('add') + '</button>') + '</div>').join('') + '</div>' +
+        '<div class="muted small">資料來源：OpenStreetMap 社群（可能不完整）</div>';
+    }
+    return h;
+  }
+  async function runNearby(kind) {
+    const nb = S.ui.nearby; if (!nb) return;
+    nb.kind = kind; nb.loading = true; nb.error = ''; nb.list = null; renderPanel(true);
+    try {
+      nb.list = await SV.nearby(kind, nb.origin, kind === 'station' || kind === 'sight' ? 1200 : 700);
+    } catch (e) { nb.error = '搜尋失敗：' + e.message + '（沒有網路或服務忙碌，稍後再試）'; }
+    nb.loading = false;
+    nearbyLayer.clearLayers();
+    if (nb.list) {
+      L.circle([nb.origin.lat, nb.origin.lng], { radius: kind === 'station' || kind === 'sight' ? 1200 : 700, color: cssVar('--accent'), weight: 1.5, dashArray: '3 6', fill: false }).addTo(nearbyLayer);
+      nb.list.forEach((r) => L.marker([r.lat, r.lng], { icon: L.divIcon({ className: 'pin-wrap', html: '<div class="npin">' + catIc(r.cat) + '</div>', iconSize: [24, 24], iconAnchor: [12, 12] }), title: r.name })
+        .bindPopup('<div class="pop"><b>' + esc(r.name) + '</b><div class="muted">' + C.fmtDist(r.dist) + (r.sub ? ' · ' + esc(r.sub) : '') + '</div></div>').addTo(nearbyLayer));
+      if (nb.list.length) fitTo(nb.list.slice(0, 15).concat([nb.origin]));
+    }
+    if (S.ui.tab === 'add') renderPanel(true);
+  }
+
+  /* ================= 行事曆匯出 ================= */
+  async function exportICS(t) {
+    if (!t.startDate) { modalMsg('需要出發日', '請先在「行程」設定出發日，才能把每站的時間放進行事曆。'); return; }
+    const events = [];
+    for (let d = 1; d <= t.days; d++) {
+      const stops = C.dayStops(t, d); if (!stops.length) continue;
+      const infos = dayLegs(t, d).map(([a, b]) => legInfo(t, a, b));
+      const tl = C.timeline(t.dayStart, infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), !!t.base);
+      stops.forEach((p, i) => events.push({
+        date: dayISO(t, d), start: tl.stops[i].arrive, end: tl.stops[i].depart, uid: t.id + '-' + p.id,
+        title: 'D' + d + ' ' + C.CATS[p.cat].emoji + ' ' + p.name, location: p.address || p.name, lat: p.lat, lng: p.lng,
+        desc: [p.note, p.hours ? '營業時間 ' + p.hours : '', C.gmapsPlaceUrl(p)].filter(Boolean).join('\n'),
+      }));
+    }
+    if (!events.length) { modalMsg('沒有可匯出的行程', '先把地點排進每一天（自動排行程）。'); return; }
+    const ics = C.buildICS(t.name, events);
+    const fname = (t.name.replace(/[\\/:*?"<>|]/g, '_') || 'trip') + '.ics';
+    const file = new File([ics], fname, { type: 'text/calendar' });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: t.name }); return; }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = fname;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    toast('已匯出 ' + events.length + ' 個行程到 ' + fname + '，打開檔案即可加入行事曆', 6000);
+    S.ui.lastIcs = ics;
   }
 
   /* ================= 行前清單 ================= */
@@ -843,7 +912,7 @@
       '<div class="row gap"><input readonly value="' + esc(link) + '" class="grow" id="shareLink"><button class="btn sm" data-mact="copy">複製</button>' + (navigator.share ? '<button class="btn sm" data-mact="native">分享…</button>' : '') + '</div>' +
       '<div class="muted small">連結長度 ' + link.length + ' 字元' + (link.length > 8000 ? '（很長，部分通訊軟體可能截斷，建議改用備份檔）' : '') + '</div>' +
       '<hr>' + syncPart + '<hr>' +
-      '<label class="lbl">文字行程（貼到 LINE／記事本）</label><button class="btn" data-mact="text">' + I('text') + ' 產生文字行程</button><hr>' +
+      '<label class="lbl">文字行程與行事曆</label><div class="row gap wrap"><button class="btn" data-mact="text">' + I('text') + ' 文字行程（貼 LINE）</button><button class="btn" data-mact="ics">' + I('today') + ' 加入行事曆（.ics）</button></div><hr>' +
       '<label class="lbl">備份檔 <span class="muted">' + (t.lastBackup ? '上次備份：' + new Date(t.lastBackup).toLocaleDateString('zh-TW') : '還沒備份過') + '</span></label><div class="row gap wrap"><button class="btn" data-mact="download">' + I('download') + ' 下載 .json 備份</button><button class="btn" data-mact="import">' + I('folder') + ' 匯入備份</button></div>' +
       '<div class="row end"><button class="btn" data-mact="close">關閉</button></div>', {
       copy: () => copyText(link),
@@ -857,6 +926,7 @@
         setTimeout(() => URL.revokeObjectURL(a.href), 5000);
         t.lastBackup = Date.now(); save({ silent: true });
       },
+      ics: () => exportICS(t),
       text: () => {
         const txt = tripText(t);
         openModal('<h3>文字行程</h3><textarea class="textout" readonly id="txtOut">' + esc(txt) + '</textarea><div class="row gap end">' + (navigator.share ? '<button class="btn" data-mact="native">分享…</button>' : '') + '<button class="btn" data-mact="close">關閉</button><button class="btn primary" data-mact="copy">複製</button></div>', {
@@ -1173,6 +1243,11 @@
         case 'measureTo': S.ui.measure.b = id; map.closePopup(); switchTab('measure'); break;
         case 'cancelPick': setPick(null); break;
         case 'sample': loadSample(); break;
+        case 'nearbyFrom': { const p = findPoint(t, id); if (p) { map.closePopup(); S.ui.nearby = { origin: { id: p.id, name: p.name, lat: p.lat, lng: p.lng }, kind: '', list: null }; switchTab('add'); } break; }
+        case 'nearbyCenter': { const c = map.getCenter(); S.ui.nearby = { origin: { id: '', name: '地圖中心', lat: c.lat, lng: c.lng }, kind: '', list: null }; renderPanel(); break; }
+        case 'nearbyKind': runNearby(el.dataset.k); break;
+        case 'nearbyAdd': { const r = S.ui.nearby.list[+el.dataset.i]; addPlaces([{ name: r.name, lat: r.lat, lng: r.lng, cat: r.cat, hours: /^\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}$/.test(r.hours) ? r.hours : '', note: r.sub }], { fit: false }); r.added = true; renderPanel(true); break; }
+        case 'nearbyClose': S.ui.nearby = null; nearbyLayer.clearLayers(); renderPanel(); break;
         case 'toggleDone': { const p = t.places.find((x) => x.id === id); if (p) { p.done = !p.done; save(); renderPanel(true); renderMap(false); if (p.done) toast('已打卡「' + p.name + '」', 4000, { label: '取消', fn: () => { p.done = false; save(); renderAll(); } }); } break; }
         case 'reorder': S.ui.reorder = !S.ui.reorder; renderPanel(true); break;
         case 'catFilter': S.ui.catFilter = el.dataset.c; renderPanel(true); break;

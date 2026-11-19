@@ -63,10 +63,17 @@ def handle(route):
         return route.fulfill(status=200, content_type='application/json', headers={'Access-Control-Allow-Origin': '*'}, body=json.dumps(res))
     if 'routes.googleapis.com' in url:
         calls['google'] += 1
-        body = {'routes': [{'distanceMeters': 5200, 'duration': '1320s', 'polyline': {'encodedPolyline': ''}, 'legs': [{'steps': [
+        body = {'routes': [{'distanceMeters': 5200, 'duration': '1320s', 'travelAdvisory': {'transitFare': {'currencyCode': 'JPY', 'units': '210'}}, 'polyline': {'encodedPolyline': ''}, 'legs': [{'steps': [
             {'travelMode': 'WALK', 'staticDuration': '240s'},
             {'travelMode': 'TRANSIT', 'transitDetails': {'stopCount': 4, 'transitLine': {'nameShort': '銀座線', 'color': '#f39700', 'vehicle': {'type': 'SUBWAY'}}, 'stopDetails': {'departureStop': {'name': '淺草'}, 'arrivalStop': {'name': '上野'}}}},
             {'travelMode': 'WALK', 'staticDuration': '180s'}]}]}]}
+        return route.fulfill(status=200, content_type='application/json', headers={'Access-Control-Allow-Origin': '*'}, body=json.dumps(body))
+    if 'overpass-api.de' in url:
+        calls['overpass'] = calls.get('overpass', 0) + 1
+        body = {'elements': [
+            {'type': 'node', 'lat': 35.7152, 'lon': 139.7970, 'tags': {'name': '浅草今半', 'name:zh': '淺草今半', 'cuisine': 'sukiyaki', 'opening_hours': '11:30-21:30'}},
+            {'type': 'node', 'lat': 35.7140, 'lon': 139.7955, 'tags': {'name': '大黒家天麩羅', 'cuisine': 'tempura'}},
+            {'type': 'way', 'center': {'lat': 35.7160, 'lon': 139.7980}, 'tags': {'name': 'Asakusa Kagetsudo'}}]}
         return route.fulfill(status=200, content_type='application/json', headers={'Access-Control-Allow-Origin': '*'}, body=json.dumps(body))
     if 'api.open-meteo.com' in url:
         calls['weather'] = calls.get('weather', 0) + 1
@@ -216,6 +223,7 @@ with sync_playwright() as p:
     page.click('[data-mact=ok]'); page.wait_for_timeout(1500)
     mt = page.inner_text('#tabBody')
     check('有金鑰時大眾運輸顯示路線（銀座線 淺草→上野）', '銀座線' in mt and 'Google' in mt, '')
+    check('顯示票價 ¥210', '¥210' in mt)
     page.screenshot(path=f'{OUT}/10_measure_google_transit.png')
 
     # 10) 分享連結往返
@@ -364,6 +372,29 @@ with sync_playwright() as p:
     vp.reload(); vp.wait_for_selector('#tabBody'); vp.wait_for_timeout(600)
     h3 = vp.evaluate("document.querySelector('#panel').getBoundingClientRect().height")
     check('重新整理後記住面板高度', abs(h3 - h2) < 30, f'{h3:.0f}px')
+    # v1.4：附近搜尋、行事曆
+    vp.click('#tabs button[data-tab=places]'); vp.click('[data-act=catFilter][data-c=""]')
+    sid = vp.evaluate("TripApp.trip().places.find(p=>p.name=='淺草寺').id")
+    vp.evaluate(f"document.querySelector('[data-act=focus][data-id=\"{sid}\"]').click()"); vp.wait_for_timeout(700)
+    vp.click('.leaflet-popup [data-act=nearbyFrom]'); vp.wait_for_timeout(300)
+    vp.click('[data-act=nearbyKind][data-k=food]'); vp.wait_for_timeout(1500)
+    nb = vp.inner_text('#tabBody')
+    check('附近搜尋：從淺草寺找餐廳，中文名優先、依距離排序', '淺草今半' in nb and '大黒家天麩羅' in nb and nb.index('大黒家天麩羅') < nb.index('Asakusa Kagetsudo'), nb[:80].replace('\n', ' '))
+    check('附近結果標在地圖上', vp.locator('.npin').count() == 3)
+    before = vp.evaluate('TripApp.trip().places.length')
+    vp.locator('[data-act=nearbyAdd]').first.click(); vp.wait_for_timeout(200)
+    added = vp.evaluate('TripApp.trip().places[TripApp.trip().places.length-1]')
+    check('附近結果一鍵加入（分類＝餐廳）', vp.evaluate('TripApp.trip().places.length') == before + 1 and added['cat'] == 'food', added['name'])
+    vp.screenshot(path=f'{OUT}/27_nearby.png')
+    vp.click('#btnShare'); vp.wait_for_selector('[data-mact=ics]')
+    with vp.expect_download() as dl:
+        vp.click('[data-mact=ics]')
+    dname = dl.value.suggested_filename
+    vp.wait_for_timeout(300)
+    check('行事曆檔名＝旅程名稱.ics', dname.endswith('.ics') and '東京' in dname, dname)
+    ics = vp.evaluate('TripApp.S.ui.lastIcs || ""')
+    check('匯出行事曆 .ics（每站一個事件、含時間）', ics.count('BEGIN:VEVENT') >= 12 and 'DTSTART:' in ics, f"{ics.count('BEGIN:VEVENT')} 個事件")
+    vp.click('[data-mact=close]')
     check('v1.3 頁面沒有錯誤', not verr, '; '.join(verr[:3]))
     vctx.close()
 

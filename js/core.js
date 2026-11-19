@@ -667,6 +667,81 @@
     return { distance: r.distanceMeters || 0, duration: dur, coords, steps, fare };
   }
 
+
+  /* ---------- 附近搜尋（OpenStreetMap Overpass） ---------- */
+  const NEARBY = {
+    food: { label: '餐廳', cat: 'food', q: ['nwr["amenity"~"^(restaurant|fast_food|food_court)$"]'] },
+    cafe: { label: '咖啡甜點', cat: 'cafe', q: ['nwr["amenity"~"^(cafe|ice_cream)$"]', 'nwr["shop"~"^(bakery|confectionery|pastry)$"]'] },
+    konbini: { label: '便利商店', cat: 'shopping', q: ['nwr["shop"="convenience"]'] },
+    station: { label: '車站', cat: 'station', q: ['nwr["railway"~"^(station|halt)$"]', 'nwr["public_transport"="station"]'] },
+    toilet: { label: '廁所', cat: 'other', q: ['nwr["amenity"="toilets"]'] },
+    atm: { label: 'ATM／銀行', cat: 'other', q: ['nwr["amenity"~"^(atm|bank)$"]'] },
+    sight: { label: '景點', cat: 'landmark', q: ['nwr["tourism"~"^(attraction|museum|viewpoint|gallery)$"]', 'nwr["historic"]["name"]'] },
+  };
+  function overpassQuery(kind, lat, lng, radius) {
+    const k = NEARBY[kind]; if (!k) throw new Error('unknown kind');
+    const around = '(around:' + Math.round(radius) + ',' + lat.toFixed(6) + ',' + lng.toFixed(6) + ')';
+    return '[out:json][timeout:15];(' + k.q.map((x) => x + around + ';').join('') + ');out center 80;';
+  }
+  function parseOverpass(json, origin, kind) {
+    const k = NEARBY[kind] || {};
+    const seen = new Set();
+    const out = [];
+    for (const e of (json && json.elements) || []) {
+      const tg = e.tags || {};
+      const lat = e.lat != null ? e.lat : e.center && e.center.lat;
+      const lng = e.lon != null ? e.lon : e.center && e.center.lon;
+      if (!validLatLng(lat, lng)) continue;
+      const name = tg['name:zh-Hant'] || tg['name:zh_hant'] || tg['name:zh-TW'] || tg['name:zh'] || tg.name || tg['name:ja'] || tg['name:en'] ||
+        (kind === 'toilet' ? '公共廁所' : kind === 'atm' ? (tg.operator || 'ATM') : '');
+      if (!name) continue;
+      const key = name + '@' + lat.toFixed(4) + ',' + lng.toFixed(4);
+      if (seen.has(key)) continue; seen.add(key);
+      const sub = [tg.cuisine && tg.cuisine.replace(/;/g, '、'), tg.brand && tg.brand !== name ? tg.brand : '', tg.opening_hours ? tg.opening_hours : ''].filter(Boolean).join(' · ');
+      out.push({ name, lat, lng, dist: haversine(origin, { lat, lng }), sub, hours: tg.opening_hours || '', cat: kind === 'sight' ? guessCat(name) === 'other' ? 'landmark' : guessCat(name) : k.cat || 'other' });
+    }
+    return out.sort((a, b) => a.dist - b.dist).slice(0, 40);
+  }
+
+  /* ---------- 票價 ---------- */
+  function fmtFare(f) {
+    if (!f || !f.currencyCode) return '';
+    const v = (+f.units || 0) + (+f.nanos || 0) / 1e9;
+    const sym = { JPY: '¥', TWD: 'NT$', USD: 'US$', EUR: '€', GBP: '£', KRW: '₩', HKD: 'HK$', CNY: '¥', THB: '฿', SGD: 'S$' }[f.currencyCode] || f.currencyCode + ' ';
+    return sym + (v % 1 ? v.toFixed(2) : v.toLocaleString('en-US'));
+  }
+
+  /* ---------- 行事曆匯出（.ics，當地時間） ---------- */
+  function icsEscape(s) { return String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n'); }
+  function icsFold(line) {
+    const out = []; let cur = '';
+    for (const ch of line) {
+      if (new TextEncoder().encode(cur + ch).length > 73) { out.push(cur); cur = ' ' + ch; } else cur += ch;
+    }
+    out.push(cur); return out.join('\r\n');
+  }
+  /** events: [{date:'YYYY-MM-DD', start: min, end: min, title, location, desc, lat, lng, uid}] */
+  function buildICS(name, events) {
+    const pad = (n) => String(n).padStart(2, '0');
+    const dt = (date, min) => {
+      const d = new Date(date + 'T00:00:00'); d.setMinutes(Math.round(min));
+      return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + 'T' + pad(d.getHours()) + pad(d.getMinutes()) + '00';
+    };
+    const now = new Date();
+    const stamp = now.getUTCFullYear() + pad(now.getUTCMonth() + 1) + pad(now.getUTCDate()) + 'T' + pad(now.getUTCHours()) + pad(now.getUTCMinutes()) + '00Z';
+    const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//trip-map//ZH', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:' + icsEscape(name)];
+    for (const e of events) {
+      L.push('BEGIN:VEVENT', 'UID:' + e.uid + '@trip-map', 'DTSTAMP:' + stamp, 'DTSTART:' + dt(e.date, e.start), 'DTEND:' + dt(e.date, Math.max(e.end, e.start + 5)),
+        'SUMMARY:' + icsEscape(e.title));
+      if (e.location) L.push('LOCATION:' + icsEscape(e.location));
+      if (e.lat != null) L.push('GEO:' + e.lat.toFixed(6) + ';' + e.lng.toFixed(6));
+      if (e.desc) L.push('DESCRIPTION:' + icsEscape(e.desc));
+      L.push('END:VEVENT');
+    }
+    L.push('END:VCALENDAR');
+    return L.map(icsFold).join('\r\n') + '\r\n';
+  }
+
   /* ---------- 分享連結編碼（壓縮在 app 層處理） ---------- */
   function b64urlEncode(bytes) {
     let s = '';
@@ -725,6 +800,6 @@
     parseGeoJSON, parseTakeoutCSV, parseKML, newTrip, sanitizeTrip, sanitizePlace, mergePlaces,
     MODES, estimateLeg, suggestMode, gmapsDirUrl, gmapsPlaceUrl, gmapsDayUrl, timeline, hm, toMin, centroid, balancedClusters,
     orderStops, planDays, pathLen, dayStops, legKey, parseOsrm, decodePolyline, parseGoogleRoute,
-    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES,
+    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS,
   };
 });

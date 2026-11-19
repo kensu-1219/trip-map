@@ -59,7 +59,7 @@ body.picking #map { cursor: crosshair; }
 
 /* 地圖標記：菱形 */
 .pin-wrap { background: none; border: 0; }
-.pin { position: relative; width: 22px; height: 22px; margin: 4px; transform: rotate(45deg); background: var(--c); border: 2px solid #efe9d6; outline: 1px solid var(--c); box-shadow: 0 2px 6px rgba(0,0,0,.35); }
+.pin { position: relative; width: 25px; height: 25px; margin: 2.5px; transform: rotate(45deg); background: var(--c); border: 2px solid #efe9d6; outline: 1px solid var(--c); box-shadow: 0 2px 6px rgba(0,0,0,.35); }
 .pin span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; transform: rotate(-45deg); color: #f4efdf; font: 700 12px/1 var(--mono); }
 .pin.dim { opacity: .3; }
 .pin.base { transform: none; width: 28px; height: 28px; margin: 1px; background: #2f2c25; outline-color: #2f2c25; }
@@ -261,7 +261,7 @@ html[data-theme="washi"] .pin, html[data-theme="washi"] .num { border-radius: 3p
    v1.3 元件
    ========================================================= */
 /* 地圖標記：菱形內是分類圖示，右上角是順序號碼 */
-.pin .ic { width: 15px; height: 15px; color: #f4efdf; }
+.pin .ic { width: 17px; height: 17px; color: #f4efdf; }
 .pin em { position: absolute; right: -9px; top: -9px; transform: rotate(-45deg); min-width: 16px; height: 16px; padding: 0 3px; background: var(--paper); color: var(--ink); border: 1px solid var(--c); font: 700 10px/14px var(--mono); font-style: normal; text-align: center; }
 html[data-theme="neon"] .pin .ic, html[data-theme="neon"] .pin span { color: #101012; }
 .pin.done { filter: grayscale(.8) brightness(.95); opacity: .55; }
@@ -302,3 +302,14 @@ html[data-theme="neon"] .pin .ic, html[data-theme="neon"] .pin span { color: #10
 #tabs button { font-size: 13px; gap: 4px; }
 #tabs button.on::before { display: none; }
 @media (max-width: 380px) { #tabs button .ic { display: none; } }
+
+.nrow { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--hair); }
+.nrow .cat { flex: none; color: var(--ink-soft); } .nrow .cat .ic { width: 20px; height: 20px; }
+.nrow .muted { font-size: 12px; }
+.npin { width: 24px; height: 24px; background: var(--card); color: var(--accent); border: 1.5px solid var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+.npin .ic { width: 14px; height: 14px; }
+
+/* 放大到街道層級才顯示地點名稱 */
+.leaflet-tooltip.plabel { display: none; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 1px 4px rgba(0,0,0,.2); padding: 2px 6px; font: 600 12px var(--sans); white-space: nowrap; }
+.leaflet-tooltip.plabel::before { display: none; }
+#map.show-labels .leaflet-tooltip.plabel { display: block; }
