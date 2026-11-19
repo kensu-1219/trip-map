@@ -243,8 +243,8 @@
   }
 
   /* ---------- 行程資料 ---------- */
-  const PALETTE = ['#e8590c', '#1c7ed6', '#2f9e44', '#ae3ec9', '#e67700', '#d6336c', '#0c8599', '#5c7cfa', '#74b816', '#868e96'];
-  const dayColor = (d) => (d > 0 ? PALETTE[(d - 1) % PALETTE.length] : '#888');
+  const PALETTE = ['#b0533b', '#3f6e78', '#6b7a35', '#7d4f7a', '#b4862f', '#9a4558', '#3c5a86', '#5f7f68', '#8a6a4b', '#6e6a5c'];
+  const dayColor = (d) => (d > 0 ? PALETTE[(d - 1) % PALETTE.length] : '#8a8370');
 
   function newTrip(name) {
     return { id: uid(), name: name || '我的旅程', days: 3, startDate: '', dayStart: '09:00', base: null, places: [], legModes: {}, updatedAt: Date.now() };

@@ -2,7 +2,10 @@
 (function () {
   'use strict';
   const C = window.TripCore, SV = window.TripServices, SY = window.TripSync, LS = SV.LS;
-  const VERSION = '1.1.0';
+  const I = (n, c) => window.TripIcons.ic(n, c);
+  const MODE_IC = { walk: 'walk', bike: 'bike', drive: 'car', transit: 'transit' };
+  const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
+  const VERSION = '1.2.0';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -34,7 +37,7 @@
     if (!opts || !opts.silent) t.updatedAt = Date.now();
     clearTimeout(saveT);
     saveT = setTimeout(() => {
-      if (!LS.set(STORE_KEY, S.data)) toast('⚠️ 手機儲存空間不足，資料可能沒有存到。請匯出備份。', 6000);
+      if (!LS.set(STORE_KEY, S.data)) toast('手機儲存空間不足，資料可能沒有存到。請匯出備份。', 6000);
     }, 200);
     if (t.synced && (!opts || !opts.fromRemote)) schedulePush(t);
   }
@@ -69,10 +72,9 @@
     tileLayer = L.tileLayer(t.url, { attribution: t.attr, maxZoom: t.max, subdomains: 'abcd', crossOrigin: true }).addTo(map);
   }
 
-  function pinIcon(color, label, cls) {
-    const base = (cls || '').includes('base');
-    return L.divIcon({ className: 'pin-wrap', html: '<div class="pin ' + (cls || '') + '" style="--c:' + color + '"><span>' + esc(label) + '</span></div>',
-      iconSize: base ? [32, 32] : [30, 30], iconAnchor: base ? [16, 16] : [15, 37], popupAnchor: base ? [0, -16] : [0, -36] });
+  function pinIcon(color, label, cls, html) {
+    return L.divIcon({ className: 'pin-wrap', html: '<div class="pin ' + (cls || '') + '" style="--c:' + color + '"><span>' + (html || esc(label)) + '</span></div>',
+      iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -16] });
   }
 
   function renderMap(fit) {
@@ -89,7 +91,7 @@
       m.addTo(markerLayer);
     }
     if (t.base) {
-      L.marker([t.base.lat, t.base.lng], { icon: pinIcon('#222', '🏨', 'base'), title: t.base.name, zIndexOffset: 500 })
+      L.marker([t.base.lat, t.base.lng], { icon: pinIcon('#2f2c25', '', 'base', I('hotel')), title: t.base.name, zIndexOffset: 500 })
         .bindPopup(() => popupHtml(t.base)).addTo(markerLayer);
     }
     // 路線
@@ -99,7 +101,8 @@
         for (const [a, b] of dayLegs(t, d)) {
           const leg = legInfo(t, a, b);
           const coords = leg.res.coords && leg.res.coords.length ? leg.res.coords : [[a.lat, a.lng], [b.lat, b.lng]];
-          L.polyline(coords, { color: C.dayColor(d), weight: f ? 5 : 4, opacity: 0.85, dashArray: leg.res.estimated ? '6 8' : null }).addTo(routeLayer);
+          L.polyline(coords, { color: '#2f2c25', weight: (f ? 5 : 4) + 2.5, opacity: 0.35, dashArray: leg.res.estimated ? '2 9' : null, lineCap: 'butt' }).addTo(routeLayer);
+          L.polyline(coords, { color: C.dayColor(d), weight: f ? 4 : 3, opacity: 0.95, dashArray: leg.res.estimated ? '2 9' : null, lineCap: 'butt' }).addTo(routeLayer);
         }
       }
     }
@@ -161,7 +164,7 @@
     const h = $('#pickHint');
     const text = { add: '點地圖新增地點', base: '點地圖設定住宿位置', a: '點地圖選起點', b: '點地圖選終點' }[mode];
     h.hidden = !mode;
-    h.innerHTML = mode ? '👆 ' + text + ' <button class="btn sm" data-act="cancelPick">取消</button>' : '';
+    h.innerHTML = mode ? I('pin') + ' ' + text + ' <button class="btn sm" data-act="cancelPick">取消</button>' : '';
     document.body.classList.toggle('picking', !!mode);
     if (mode && window.innerWidth < 900) setSheet('peek');
   }
@@ -217,19 +220,20 @@
     if (S.ui.tab === 'places') { const i = $('#placeSearch'); if (i && S.ui.focusSearch) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }
   }
 
+  const sec = (t) => '<div class="sec">' + t + '</div>';
   function renderPlan() {
     const t = trip();
     const f = S.ui.dayFilter;
-    let h = '<div class="row wrap gap">' +
+    let h = sec('// Itinerary · 行程設定') + '<div class="row wrap gap">' +
       '<label class="field">天數 <span class="stepper"><button data-act="days" data-d="-1">−</button><b>' + t.days + '</b><button data-act="days" data-d="1">＋</button></span></label>' +
       '<label class="field">出發日 <input type="date" id="startDate" value="' + esc(t.startDate) + '"></label>' +
       '<label class="field">每天 <input type="time" id="dayStart" value="' + esc(t.dayStart || '09:00') + '" step="900"> 出門</label>' +
       '</div>' + installBanner() +
-      '<div class="row gap base-row">🏨 <span class="grow">' + (t.base ? '<b>' + esc(t.base.name) + '</b> <span class="muted">每天從這裡出發、回來</span>' : '<span class="muted">未設定住宿（設定後每天會從住宿出發）</span>') + '</span><button class="btn sm" data-act="setBase">' + (t.base ? '更換' : '設定') + '</button></div>' +
-      '<button class="btn primary block" data-act="autoplan"' + (t.places.length ? '' : ' disabled') + '>✨ 自動排行程（依遠近分成 ' + t.days + ' 天、排出最順路線）</button>';
+      '<div class="row gap base-row">' + I('hotel') + ' <span class="grow">' + (t.base ? '<b>' + esc(t.base.name) + '</b> <span class="muted">每天從這裡出發、回來</span>' : '<span class="muted">未設定住宿（設定後每天會從住宿出發）</span>') + '</span><button class="btn sm" data-act="setBase">' + (t.base ? '更換' : '設定') + '</button></div>' +
+      '<button class="btn primary block" data-act="autoplan"' + (t.places.length ? '' : ' disabled') + '>' + I('auto') + ' 自動排行程 <span style="opacity:.7;font-weight:400">· 依遠近分 ' + t.days + ' 天</span></button>';
     if (!t.places.length) return h + welcomeHtml();
-    h += '<div class="chips">' + '<button class="chip' + (f ? '' : ' on') + '" data-act="filter" data-d="0">全部</button>' +
-      range(t.days).map((d) => '<button class="chip' + (f === d ? ' on' : '') + '" data-act="filter" data-d="' + d + '" style="--c:' + C.dayColor(d) + '">D' + d + '</button>').join('') + '</div>';
+    h += sec('// Route · 每日路線') + '<div class="chips">' + '<button class="chip' + (f ? '' : ' on') + '" data-act="filter" data-d="0">ALL</button>' +
+      range(t.days).map((d) => '<button class="chip' + (f === d ? ' on' : '') + '" data-act="filter" data-d="' + d + '" style="--c:' + C.dayColor(d) + '">D' + String(d).padStart(2, '0') + '</button>').join('') + '</div>';
     const days = f ? [f] : range(t.days);
     for (const d of days) h += dayBlock(t, d);
     const un = t.places.filter((p) => !p.day || p.day > t.days);
@@ -249,8 +253,8 @@
     const tl = C.timeline(t.dayStart, infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), !!t.base);
     const seq = t.base && stops.length ? [t.base].concat(stops, [t.base]) : stops;
     const mainMode = mostCommonMode(infos);
-    let h = '<div class="day" data-day="' + d + '"><div class="day-h" style="--c:' + C.dayColor(d) + '"><b>Day ' + d + '</b> <span>' + dayDate(t, d) + '</span>' +
-      (seq.length >= 2 ? '<span class="day-tools"><a class="btn sm ghost" target="_blank" rel="noopener" href="' + esc(C.gmapsDayUrl(seq, mainMode)) + '" title="整天路線在 Google Maps 開啟（最多 9 個中途點）">整天導航</a></span>' : '') +
+    let h = '<div class="day" data-day="' + d + '"><div class="day-h" style="--c:' + C.dayColor(d) + '"><b>DAY ' + String(d).padStart(2, '0') + '</b> <span>' + dayDate(t, d) + '</span>' +
+      (seq.length >= 2 ? '<span class="day-tools"><a class="btn sm ghost" target="_blank" rel="noopener" href="' + esc(C.gmapsDayUrl(seq, mainMode)) + '" title="整天路線在 Google Maps 開啟（最多 9 個中途點）">' + I('nav') + ' 整天導航</a></span>' : '') +
       '<span class="muted">' + stops.length + ' 站' + (stops.length ? ' · ' + C.hm(C.toMin(t.dayStart)) + '–' + C.hm(tl.end) + ' · 移動 ' + (est ? '約 ' : '') + C.fmtDur(move) + ' · ' + C.fmtDist(dist) + ' · 停留 ' + C.fmtDur(stay) : '') + '</span></div>';
     if (!stops.length) return h + '<div class="empty sm">這天沒有安排</div></div>';
     let li = 0;
@@ -266,18 +270,18 @@
     const c = {}; infos.forEach((i) => { c[i.mode] = (c[i.mode] || 0) + 1; });
     return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || 'transit';
   }
-  const baseRow = (b, time) => '<div class="stop base"><span class="num" style="--c:#1b2537">🏨</span><span class="grow">' + esc(b.name) + '</span>' + (time ? '<span class="time">' + time + '</span>' : '') + '</div>';
+  const baseRow = (b, time) => '<div class="stop base"><span class="num base">' + I('hotel') + '</span><span class="grow">' + esc(b.name) + '</span>' + (time ? '<span class="time">' + time + '</span>' : '') + '</div>';
 
   function stopRow(t, p, unassigned, i, n, tm) {
     return '<div class="stop" data-id="' + p.id + '">' +
-      '<span class="num" style="--c:' + C.dayColor(unassigned ? 0 : p.day) + '">' + (unassigned ? '•' : p.order + 1) + '</span>' +
-      '<span class="grow"><a href="#" data-act="focus" data-id="' + p.id + '">' + esc(p.name) + '</a>' + (p.locked ? ' <span title="已鎖定在這天">🔒</span>' : '') +
+      '<span class="num" style="--c:' + C.dayColor(unassigned ? 0 : p.day) + '"><span>' + (unassigned ? '·' : p.order + 1) + '</span></span>' +
+      '<span class="grow"><a href="#" data-act="focus" data-id="' + p.id + '">' + esc(p.name) + '</a>' + (p.locked ? ' <span title="已鎖定在這天" class="muted">' + I('lock') + '</span>' : '') +
       '<br>' + (tm ? '<span class="time">' + C.hm(tm.arrive) + '–' + C.hm(tm.depart) + '</span> ' : '') + '<span class="muted">停留 ' + C.fmtDur((p.stay || 0) * 60) + (p.note ? ' · ' + esc(p.note.slice(0, 40)) : '') + '</span></span>' +
-      (unassigned ? '' : '<button class="icon-btn sm" data-act="up" data-id="' + p.id + '"' + (i === 0 ? ' disabled' : '') + ' title="往前">↑</button>' +
-        '<button class="icon-btn sm" data-act="down" data-id="' + p.id + '"' + (i === n - 1 ? ' disabled' : '') + ' title="往後">↓</button>') +
+      (unassigned ? '' : '<button class="icon-btn sm" data-act="up" data-id="' + p.id + '"' + (i === 0 ? ' disabled' : '') + ' title="往前">' + I('up') + '</button>' +
+        '<button class="icon-btn sm" data-act="down" data-id="' + p.id + '"' + (i === n - 1 ? ' disabled' : '') + ' title="往後">' + I('down') + '</button>') +
       '<select class="daysel" data-act="moveDay" data-id="' + p.id + '" title="移到哪一天"><option value="0"' + (p.day ? '' : ' selected') + '>未排</option>' +
       range(t.days).map((d) => '<option value="' + d + '"' + (p.day === d ? ' selected' : '') + '>D' + d + '</option>').join('') + '</select>' +
-      '<button class="icon-btn sm" data-act="edit" data-id="' + p.id + '" title="編輯">✏️</button></div>';
+      '<button class="icon-btn sm" data-act="edit" data-id="' + p.id + '" title="編輯">' + I('edit') + '</button></div>';
   }
 
   function legRow(t, li) {
@@ -287,14 +291,14 @@
     const a = findPoint(t, aId), b = findPoint(t, bId);
     let detail = '';
     if (r.steps && r.steps.length) {
-      detail = '<div class="steps">' + r.steps.map((s) => s.walk ? '🚶' + Math.max(1, Math.round(s.sec / 60)) + '分' :
-        '<span class="line" style="--lc:' + esc(s.color || '#555') + '">' + s.icon + ' ' + esc(s.line) + '</span> ' + esc(s.from) + '→' + esc(s.to) + (s.stops ? '（' + s.stops + '站）' : '')).join(' › ') + '</div>';
+      detail = '<div class="steps">' + r.steps.map((s) => s.walk ? I('walk') + Math.max(1, Math.round(s.sec / 60)) + '分' :
+        '<span class="line" style="--lc:' + esc(s.color || '#555') + '">' + stepIc(s.icon) + ' ' + esc(s.line) + '</span> ' + esc(s.from) + '→' + esc(s.to) + (s.stops ? '（' + s.stops + '站）' : '')).join(' › ') + '</div>';
     }
     const status = r.estimated ? (li.mode === 'transit' && !settings().gkey ? '估算' : r.error ? '估算（' + esc(r.error) + '）' : '估算中…') : (r.source === 'google' ? 'Google' : '實際路線');
     return '<div class="leg">' +
-      '<div class="modes">' + Object.entries(C.MODES).map(([k, m]) => '<button class="mode' + (k === li.mode ? ' on' : '') + '" data-act="mode" data-key="' + esc(li.key) + '" data-mode="' + k + '" title="' + m.label + '">' + m.icon + '</button>').join('') + '</div>' +
+      '<div class="modes">' + Object.entries(C.MODES).map(([k, m]) => '<button class="mode' + (k === li.mode ? ' on' : '') + '" data-act="mode" data-key="' + esc(li.key) + '" data-mode="' + k + '" title="' + m.label + '">' + I(MODE_IC[k]) + '</button>').join('') + '</div>' +
       '<div class="leg-info"><b>' + (r.estimated ? '約 ' : '') + C.fmtDur(r.duration) + '</b> · ' + C.fmtDist(r.distance) + ' <span class="muted">(' + status + (r.note ? '，' + esc(r.note) : '') + ')</span>' + detail + '</div>' +
-      (a && b ? '<a class="btn sm ghost" target="_blank" rel="noopener" href="' + esc(C.gmapsDirUrl(a, b, li.mode)) + '">導航</a>' : '') +
+      (a && b ? '<a class="btn sm ghost" target="_blank" rel="noopener" href="' + esc(C.gmapsDirUrl(a, b, li.mode)) + '" title="在 Google Maps 導航">' + I('nav') + '</a>' : '') +
       '</div>';
   }
 
@@ -302,13 +306,13 @@
     const t = trip();
     const q = S.ui.search.trim().toLowerCase();
     const list = t.places.filter((p) => !q || (p.name + ' ' + p.note + ' ' + p.address).toLowerCase().includes(q));
-    let h = '<div class="row gap"><input id="placeSearch" type="search" placeholder="篩選 ' + t.places.length + ' 個地點…" value="' + esc(S.ui.search) + '" class="grow"></div>';
+    let h = sec('// Locations · ' + t.places.length) + '<div class="row gap"><input id="placeSearch" type="search" placeholder="篩選 ' + t.places.length + ' 個地點…" value="' + esc(S.ui.search) + '" class="grow"></div>';
     if (!t.places.length) return h + '<div class="empty">還沒有地點。</div>';
     const shown = list.slice(0, 300);
-    h += shown.map((p) => '<div class="stop" data-id="' + p.id + '"><span class="num" style="--c:' + C.dayColor(p.day) + '">' + (p.day ? 'D' + p.day : '•') + '</span>' +
+    h += shown.map((p) => '<div class="stop" data-id="' + p.id + '"><span class="num" style="--c:' + C.dayColor(p.day) + '"><span>' + (p.day ? p.day : '·') + '</span></span>' +
       '<span class="grow"><a href="#" data-act="focus" data-id="' + p.id + '">' + esc(p.name) + '</a><br><span class="muted">' + esc((p.note || p.address || '').slice(0, 60)) + '</span></span>' +
-      '<a class="icon-btn sm" href="' + esc(C.gmapsPlaceUrl(p)) + '" target="_blank" rel="noopener" title="在 Google 地圖開啟">G</a>' +
-      '<button class="icon-btn sm" data-act="edit" data-id="' + p.id + '">✏️</button></div>').join('');
+      '<a class="icon-btn sm" href="' + esc(C.gmapsPlaceUrl(p)) + '" target="_blank" rel="noopener" title="在 Google 地圖開啟">' + I('ext') + '</a>' +
+      '<button class="icon-btn sm" data-act="edit" data-id="' + p.id + '">' + I('edit') + '</button></div>').join('');
     if (list.length > shown.length) h += '<div class="muted center">還有 ' + (list.length - shown.length) + ' 個，請用上方篩選</div>';
     h += '<button class="btn danger block" data-act="clearPlaces">刪除全部地點</button>';
     return h;
@@ -316,20 +320,20 @@
 
   function renderAdd() {
     const geo = S.ui.geo;
-    let h = '<label class="lbl">貼上 Google Maps 連結、座標或地名（可一次貼多行）</label>' +
+    let h = sec('// Add · 新增地點') + '<label class="lbl">貼上 Google Maps 連結、座標或地名（可一次貼多行）</label>' +
       '<textarea id="addInput" rows="3" placeholder="例：https://www.google.com/maps/place/...&#10;或：35.7148, 139.7967&#10;或：清水寺"></textarea>' +
-      '<div class="row gap"><button class="btn primary grow" data-act="addGo">加入／搜尋</button><button class="btn" data-act="pickAdd">🗺️ 在地圖上點</button></div>';
+      '<div class="row gap"><button class="btn primary grow" data-act="addGo">加入／搜尋</button><button class="btn" data-act="pickAdd">' + I('map') + ' 在地圖上點</button></div>';
     if (S.ui.addMsg) h += '<div class="msg">' + S.ui.addMsg + '</div>';
     if (S.ui.results) {
       h += '<div class="results"><div class="muted">搜尋結果（' + (S.ui.results.source || '') + '）— 點一下加入：</div>' +
         (S.ui.results.list.length ? S.ui.results.list.map((r, i) => '<button class="result" data-act="pickResult" data-i="' + i + '"><b>' + esc(r.name) + '</b><br><span class="muted">' + esc(r.address) + '</span></button>').join('') : '<div class="empty sm">找不到，換個關鍵字（加上城市名通常有幫助）</div>') + '</div>';
     }
     if (geo) {
-      h += '<div class="msg">📍 正在查詢沒有座標的地點：' + geo.done + ' / ' + geo.total + (geo.failed.length ? '，找不到 ' + geo.failed.length + ' 個' : '') + (geo.done < geo.total ? '（每秒約 1 個）' : ' ✅') + '</div>';
+      h += '<div class="msg">' + I('search') + ' 正在查詢沒有座標的地點：' + geo.done + ' / ' + geo.total + (geo.failed.length ? '，找不到 ' + geo.failed.length + ' 個' : '') + (geo.done < geo.total ? '（每秒約 1 個）' : ' — 完成') + '</div>';
       if (geo.done >= geo.total && geo.failed.length) h += '<div class="msg warn">找不到座標：' + geo.failed.map(esc).join('、') + '<br>可以在上方用地名＋城市重新搜尋。</div>';
     }
-    h += '<hr><label class="lbl">匯入檔案</label>' +
-      '<button class="btn block" data-act="import">📂 選擇檔案（Google 已儲存清單 .csv／已加星號 .json／My Maps .kml／本工具備份 .json）</button>' +
+    h += '<hr>' + sec('// Import · 匯入') +
+      '<button class="btn block" data-act="import">' + I('folder') + ' 選擇檔案（Google 已儲存清單 .csv／已加星號 .json／My Maps .kml／本工具備份 .json）</button>' +
       '<details><summary>怎麼把 Google Maps 存的地點整批匯出？</summary><ol class="help">' +
       '<li>電腦開 <a href="https://takeout.google.com/" target="_blank" rel="noopener">takeout.google.com</a>，先按「取消全選」。</li>' +
       '<li>只勾「<b>已儲存</b>」（Saved，各清單 .csv）和「<b>地圖（你的地點）</b>」（已加星號 .json）。</li>' +
@@ -345,13 +349,13 @@
     const pts = allPoints(t);
     const extra = Object.values(S.ui.mpoints || {});
     const opts = (sel) => '<option value="">— 選擇 —</option>' +
-      (S.ui.me ? '<option value="me"' + (sel === 'me' ? ' selected' : '') + '>📍 我的位置</option>' : '') +
-      extra.map((p) => '<option value="' + p.id + '"' + (sel === p.id ? ' selected' : '') + '>🗺️ ' + esc(p.name) + '（' + p.lat.toFixed(4) + ',' + p.lng.toFixed(4) + '）</option>').join('') +
-      pts.map((p) => '<option value="' + p.id + '"' + (sel === p.id ? ' selected' : '') + '>' + (p.id === 'base' ? '🏨 ' : p.day ? 'D' + p.day + ' ' : '') + esc(p.name) + '</option>').join('');
-    let h = '<div class="measure">' +
-      '<label class="lbl">起點</label><div class="row gap"><select id="mA" class="grow">' + opts(S.ui.measure.a) + '</select><button class="btn sm" data-act="pickA">🗺️</button></div>' +
-      '<div class="center"><button class="icon-btn" data-act="swap" title="對調">⇅</button></div>' +
-      '<label class="lbl">終點</label><div class="row gap"><select id="mB" class="grow">' + opts(S.ui.measure.b) + '</select><button class="btn sm" data-act="pickB">🗺️</button></div></div>';
+      (S.ui.me ? '<option value="me"' + (sel === 'me' ? ' selected' : '') + '>◎ 我的位置</option>' : '') +
+      extra.map((p) => '<option value="' + p.id + '"' + (sel === p.id ? ' selected' : '') + '>⌖ ' + esc(p.name) + '（' + p.lat.toFixed(4) + ',' + p.lng.toFixed(4) + '）</option>').join('') +
+      pts.map((p) => '<option value="' + p.id + '"' + (sel === p.id ? ' selected' : '') + '>' + (p.id === 'base' ? '■ 住宿 ' : p.day ? 'D' + p.day + ' ' : '') + esc(p.name) + '</option>').join('');
+    let h = sec('// Measure · 量距離') + '<div class="measure">' +
+      '<label class="lbl">起點</label><div class="row gap"><select id="mA" class="grow">' + opts(S.ui.measure.a) + '</select><button class="btn sm" data-act="pickA" title="在地圖上點">' + I('map') + '</button></div>' +
+      '<div class="center"><button class="icon-btn" data-act="swap" title="對調">' + I('swap') + '</button></div>' +
+      '<label class="lbl">終點</label><div class="row gap"><select id="mB" class="grow">' + opts(S.ui.measure.b) + '</select><button class="btn sm" data-act="pickB" title="在地圖上點">' + I('map') + '</button></div></div>';
     const a = findPointAny(t, S.ui.measure.a), b = findPointAny(t, S.ui.measure.b);
     if (a && b) {
       const straight = C.haversine(a, b);
@@ -364,31 +368,38 @@
           if (r.estimated && !S.requested.has(sk)) { S.requested.add(sk); SV.getLeg(a, b, k, settings()).then((x) => { S.legs[sk] = x; if (S.ui.tab === 'measure') renderPanel(true); }); }
           else if (!r.estimated) S.legs[sk] = r;
         }
-        const steps = r.steps && r.steps.length ? '<div class="steps">' + r.steps.map((s) => s.walk ? '🚶' + Math.max(1, Math.round(s.sec / 60)) + '分' : s.icon + ' ' + esc(s.line) + ' ' + esc(s.from) + '→' + esc(s.to)).join(' › ') + '</div>' : '';
+        const steps = r.steps && r.steps.length ? '<div class="steps">' + r.steps.map((s) => s.walk ? I('walk') + Math.max(1, Math.round(s.sec / 60)) + '分' : stepIc(s.icon) + ' ' + esc(s.line) + ' ' + esc(s.from) + '→' + esc(s.to)).join(' › ') + '</div>' : '';
         const tag = r.estimated ? (k === 'transit' && !settings().gkey ? '估算' : r.error ? '估算' : '查詢中…') : (r.source === 'google' ? 'Google' : '實際路線');
-        h += '<div class="mrow"><span class="micon">' + m.icon + '</span><span class="grow"><b>' + m.label + '</b> ' + (r.estimated ? '約 ' : '') + C.fmtDur(r.duration) + ' · ' + C.fmtDist(r.distance) +
+        h += '<div class="mrow"><span class="micon">' + I(MODE_IC[k]) + '</span><span class="grow"><b>' + m.label + '</b> ' + (r.estimated ? '約 ' : '') + C.fmtDur(r.duration) + ' · ' + C.fmtDist(r.distance) +
           ' <span class="muted">(' + tag + ')</span>' + (r.note ? '<br><span class="muted">' + esc(r.note) + '</span>' : '') + steps + '</span>' +
           '<a class="btn sm ghost" target="_blank" rel="noopener" href="' + esc(C.gmapsDirUrl(a, b, k)) + '">Google</a></div>';
       }
       h += '</div>';
-      if (!settings().gkey) h += '<div class="muted small">🚇 大眾運輸目前是估算值。按「Google」看實際班次，或到 ⚙️ 設定填入 Google 金鑰自動查詢。</div>';
+      if (!settings().gkey) h += '<div class="muted small">大眾運輸目前是估算值。按「Google」看實際班次，或到「設定」填入 Google 金鑰自動查詢。</div>';
     } else {
-      h += '<div class="empty">選兩個地點（或點地圖上的 📍 →「從這裡量」），會同時算出步行、單車、開車、大眾運輸的時間和距離。</div>';
+      h += '<div class="empty">選兩個地點（或點地圖上的標記 →「從這裡量」），會同時算出步行、單車、開車、大眾運輸的時間和距離。</div>';
     }
     return h;
   }
 
   /* ---------- 歡迎畫面、範例、安裝提醒 ---------- */
   function welcomeHtml() {
-    return '<div class="welcome"><svg viewBox="0 0 220 120" aria-hidden="true"><path d="M20 22 L80 10 L140 22 L200 10 L200 98 L140 110 L80 98 L20 110 Z" fill="var(--card)" stroke="var(--line)" stroke-width="2"/>' +
-      '<path d="M80 10 L80 98 M140 22 L140 110" stroke="var(--line)" stroke-width="2"/>' +
-      '<path d="M40 90 C 60 70, 90 84, 110 62 S 150 40, 170 34" fill="none" stroke="var(--pri)" stroke-width="3" stroke-dasharray="2 8" stroke-linecap="round"/>' +
-      '<circle cx="40" cy="90" r="6" fill="var(--pri)"/><path d="M170 8 c-11 0 -18 8 -18 17 c0 11 12 21 18 29 c6 -8 18 -18 18 -29 c0 -9 -7 -17 -18 -17z" fill="var(--accent)"/><circle cx="170" cy="25" r="6" fill="#fff"/></svg>' +
-      '<h3>開始規劃你的旅程</h3><ol>' +
-      '<li>到「➕ 新增」貼上 Google Maps 連結、搜尋地名，或匯入 Google 已儲存清單</li>' +
-      '<li>設定天數和住宿，按「✨ 自動排行程」</li>' +
-      '<li>每段路切換 🚶🚲🚗🚇 看時間，按「導航」直接開 Google Maps</li></ol>' +
-      '<button class="btn accent block" data-act="sample">👀 先看範例：東京 3 天</button></div>';
+    return '<div class="welcome"><svg class="art" viewBox="0 0 300 150" aria-hidden="true" fill="none" stroke="currentColor">' +
+      '<g stroke-opacity=".25" stroke-width="1">' + Array.from({ length: 13 }, (_, i) => '<path d="M' + (i * 25) + ' 0V150"/>').join('') + Array.from({ length: 7 }, (_, i) => '<path d="M0 ' + (i * 25) + 'H300"/>').join('') + '</g>' +
+      '<path d="M40 30 L110 18 L190 30 L260 18 L260 122 L190 134 L110 122 L40 134 Z" fill="var(--card)" stroke-width="1.5"/>' +
+      '<path d="M110 18 V122 M190 30 V134" stroke-width="1" stroke-opacity=".5"/>' +
+      '<path d="M62 112 C 90 90, 120 104, 146 80 S 196 52, 228 46" stroke="var(--accent)" stroke-width="2" stroke-dasharray="1 7" stroke-linecap="square"/>' +
+      '<rect x="56" y="106" width="12" height="12" transform="rotate(45 62 112)" fill="currentColor" stroke="none"/>' +
+      '<rect x="140" y="74" width="12" height="12" transform="rotate(45 146 80)" fill="var(--card)" stroke-width="2"/>' +
+      '<rect x="218" y="36" width="20" height="20" transform="rotate(45 228 46)" fill="var(--accent)" stroke="none"/>' +
+      '<rect x="224" y="42" width="8" height="8" transform="rotate(45 228 46)" fill="var(--card)" stroke="none"/>' +
+      '<path d="M228 16 V28 M228 64 V76 M198 46 H210 M246 46 H258" stroke-width="1.5"/>' +
+      '<text x="44" y="146" font-size="8" font-family="monospace" fill="currentColor" stroke="none" letter-spacing="2" opacity=".6">LAT 35.68 / LNG 139.76</text></svg>' +
+      '<div class="sub">TRIP · MAP · SYSTEM</div><h3>開始規劃你的旅程</h3><ol>' +
+      '<li><span>到「新增」貼上 Google Maps 連結、搜尋地名，或匯入 Google 已儲存清單</span></li>' +
+      '<li><span>設定天數和住宿，按「自動排行程」</span></li>' +
+      '<li><span>每段路切換步行／單車／開車／大眾運輸看時間，按導航直接開 Google Maps</span></li></ol>' +
+      '<button class="btn accent block" data-act="sample">' + I('eye') + ' 先看範例：東京 3 天</button></div>';
   }
   function installBanner() {
     const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -396,7 +407,7 @@
     if (!ios || standalone) return '';
     const f = S.data.flags.installDismissed;
     if (f && Date.now() - f < 7 * 864e5) return '';
-    return '<div class="banner">📲<span>請按 Safari 的「分享 → <b>加入主畫面</b>」。沒加的話，iPhone 可能在一週沒使用後清掉資料。</span><button data-act="dismissBanner" aria-label="關閉">✕</button></div>';
+    return '<div class="banner">' + I('phone') + '<span>請按 Safari 的「分享 → <b>加入主畫面</b>」。沒加的話，iPhone 可能在一週沒使用後清掉資料。</span><button data-act="dismissBanner" aria-label="關閉">' + I('close') + '</button></div>';
   }
   function loadSample() {
     const n = C.newTrip('範例：東京 3 天');
@@ -410,7 +421,7 @@
     n.places = pts.map(([name, lat, lng, note]) => C.sanitizePlace({ name, lat, lng, note }));
     n.places = C.planDays(n);
     S.data.trips.push(n); S.data.current = n.id; save(); renderAll(true);
-    toast('已載入範例，可以隨意修改或在 ⚙️ 刪除');
+    toast('已載入範例，可以隨意修改或在設定裡刪除');
   }
 
   /* ================= 動作 ================= */
@@ -448,7 +459,7 @@
     if (direct.length) { addPlaces(direct); $('#addInput') && ($('#addInput').value = ''); }
     if (queries.length) {
       const q = queries[0];
-      S.ui.addMsg = msgs.join('<br>') + (msgs.length ? '<br>' : '') + '🔎 搜尋「' + esc(q.q) + '」中…';
+      S.ui.addMsg = msgs.join('<br>') + (msgs.length ? '<br>' : '') + I('search') + ' 搜尋「' + esc(q.q) + '」中…';
       renderPanel();
       try {
         const c = map.getCenter();
@@ -459,7 +470,7 @@
         S.ui.addMsg = msgs.join('<br>');
         if (list.length) fitTo(list);
       } catch (e) {
-        S.ui.addMsg = msgs.join('<br>') + '<br>⚠️ 搜尋失敗：' + esc(e.message) + '（沒有網路？）';
+        S.ui.addMsg = msgs.join('<br>') + '<br>' + I('warn') + ' 搜尋失敗：' + esc(e.message) + '（沒有網路？）';
       }
       renderPanel();
     } else if (msgs.length) { S.ui.addMsg = msgs.join('<br>'); renderPanel(); }
@@ -536,7 +547,7 @@
     // 重新編號原本那天
     for (let k = 1; k <= t.days; k++) C.dayStops(t, k).forEach((s, i) => { s.order = i; });
     save(); renderAll();
-    if (d) toast('已移到 Day ' + d + ' 並鎖定 🔒', 5000, undoAct);
+    if (d) toast('已移到 Day ' + d + ' 並鎖定', 5000, undoAct);
   }
 
   function autoplan() {
@@ -545,10 +556,10 @@
       snapshot();
       t.places = C.planDays(t);
       save(); S.ui.dayFilter = 0; renderAll(true);
-      toast('✨ 已排成 ' + t.days + ' 天，手動移動的會被鎖定', 6000, undoAct);
+      toast('已排成 ' + t.days + ' 天，手動移動的會被鎖定', 6000, undoAct);
     };
     if (t.places.some((p) => p.day)) {
-      openModal('<h3>重新排行程？</h3><p>會重新安排所有<b>沒有鎖定🔒</b>的地點。鎖定的地點維持在原本那天。</p>' +
+      openModal('<h3>重新排行程？</h3><p>會重新安排所有<b>沒有鎖定</b>的地點。鎖定的地點維持在原本那天。</p>' +
         '<div class="row gap end"><button class="btn" data-mact="close">取消</button><button class="btn primary" data-mact="ok">重新排</button></div>', { ok: () => { closeModal(); run(); } });
     } else run();
   }
@@ -562,7 +573,7 @@
       '<label class="lbl">備註</label><textarea id="eNote" rows="3">' + esc(p.note) + '</textarea>' +
       '<div class="row gap"><label class="field">停留（分鐘）<input id="eStay" type="number" min="0" max="1440" step="15" value="' + p.stay + '"></label>' +
       '<label class="field">天數 <select id="eDay"><option value="0">未排</option>' + range(t.days).map((d) => '<option value="' + d + '"' + (p.day === d ? ' selected' : '') + '>Day ' + d + '</option>').join('') + '</select></label></div>' +
-      '<label class="check"><input type="checkbox" id="eLock"' + (p.locked ? ' checked' : '') + '> 🔒 鎖定在這天（自動排行程不會移動）</label>' +
+      '<label class="check"><input type="checkbox" id="eLock"' + (p.locked ? ' checked' : '') + '> 鎖定在這天（自動排行程不會移動）</label>' +
       '<div class="muted small">座標 ' + p.lat.toFixed(6) + ', ' + p.lng.toFixed(6) + '</div>' +
       '<div class="row gap end"><button class="btn danger" data-mact="del">刪除</button><span class="grow"></span><button class="btn" data-mact="close">取消</button><button class="btn primary" data-mact="ok">儲存</button></div>', {
       ok: () => {
@@ -585,11 +596,11 @@
 
   function setBaseModal() {
     const t = trip();
-    openModal('<h3>🏨 設定住宿</h3><p class="muted">住宿會當作每天的起點和終點（排行程時也會考慮離住宿的遠近）。</p>' +
+    openModal('<h3>設定住宿</h3><p class="muted">住宿會當作每天的起點和終點（排行程時也會考慮離住宿的遠近）。</p>' +
       (t.places.length ? '<label class="lbl">從地點清單選一個當住宿</label><select id="bSel"><option value="">— 選擇 —</option>' + t.places.map((p) => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('') + '</select>' : '') +
       '<div class="row gap wrap" style="margin-top:12px">' + (t.places.length ? '<button class="btn primary" data-mact="ok">使用選擇的地點</button>' : '') +
-      '<button class="btn" data-mact="pick">🗺️ 在地圖上點</button>' + (t.base ? '<button class="btn danger" data-mact="clear">不設住宿</button>' : '') + '<button class="btn" data-mact="close">取消</button></div>' +
-      '<p class="muted small">住宿還沒在清單裡？先到「➕ 新增」搜尋或貼上飯店的 Google Maps 連結。</p>', {
+      '<button class="btn" data-mact="pick">' + I('map') + ' 在地圖上點</button>' + (t.base ? '<button class="btn danger" data-mact="clear">不設住宿</button>' : '') + '<button class="btn" data-mact="close">取消</button></div>' +
+      '<p class="muted small">住宿還沒在清單裡？先到「新增」搜尋或貼上飯店的 Google Maps 連結。</p>', {
       ok: () => {
         const id = $('#bSel').value; if (!id) return;
         const p = t.places.find((x) => x.id === id);
@@ -628,20 +639,20 @@
     const link = baseUrl() + '#t=' + (await compress(JSON.stringify(C.packTrip(t))));
     const fb = settings().fbConfig;
     let syncPart;
-    if (!fb) syncPart = '<p class="muted small">想讓同行的人一起即時編輯？到 ⚙️ 設定貼上 Firebase 設定（README 有教學）。</p>';
-    else if (!t.synced) syncPart = '<button class="btn primary block" data-mact="enableSync">☁️ 開啟這趟旅程的即時同步</button>';
+    if (!fb) syncPart = '<p class="muted small">想讓同行的人一起即時編輯？到「設定」貼上 Firebase 設定（README 有教學）。</p>';
+    else if (!t.synced) syncPart = '<button class="btn primary block" data-mact="enableSync">' + I('cloud') + ' 開啟這趟旅程的即時同步</button>';
     else {
       const join = baseUrl() + '?join=' + t.id + '#fb=' + C.b64urlEncode(new TextEncoder().encode(JSON.stringify(fb)));
-      syncPart = '<label class="lbl">☁️ 共同編輯連結（拿到的人修改也會同步給你）</label><div class="row gap"><input readonly value="' + esc(join) + '" class="grow" id="joinLink"><button class="btn sm" data-mact="copyJoin">複製</button></div>' +
+      syncPart = '<label class="lbl">共同編輯連結（拿到的人修改也會同步給你）</label><div class="row gap"><input readonly value="' + esc(join) + '" class="grow" id="joinLink"><button class="btn sm" data-mact="copyJoin">複製</button></div>' +
         '<button class="btn sm ghost" data-mact="disableSync">停止同步（保留本機資料）</button>';
     }
-    openModal('<h3>📤 分享與備份</h3>' +
+    openModal('<h3>分享與備份</h3>' +
       '<label class="lbl">行程快照連結（對方點開即可匯入一份副本）</label>' +
       '<div class="row gap"><input readonly value="' + esc(link) + '" class="grow" id="shareLink"><button class="btn sm" data-mact="copy">複製</button>' + (navigator.share ? '<button class="btn sm" data-mact="native">分享…</button>' : '') + '</div>' +
       '<div class="muted small">連結長度 ' + link.length + ' 字元' + (link.length > 8000 ? '（很長，部分通訊軟體可能截斷，建議改用備份檔）' : '') + '</div>' +
       '<hr>' + syncPart + '<hr>' +
-      '<label class="lbl">文字行程（貼到 LINE／記事本）</label><button class="btn" data-mact="text">📝 產生文字行程</button><hr>' +
-      '<label class="lbl">備份檔 <span class="muted">' + (t.lastBackup ? '上次備份：' + new Date(t.lastBackup).toLocaleDateString('zh-TW') : '還沒備份過') + '</span></label><div class="row gap wrap"><button class="btn" data-mact="download">⬇️ 下載 .json 備份</button><button class="btn" data-mact="import">📂 匯入備份</button></div>' +
+      '<label class="lbl">文字行程（貼到 LINE／記事本）</label><button class="btn" data-mact="text">' + I('text') + ' 產生文字行程</button><hr>' +
+      '<label class="lbl">備份檔 <span class="muted">' + (t.lastBackup ? '上次備份：' + new Date(t.lastBackup).toLocaleDateString('zh-TW') : '還沒備份過') + '</span></label><div class="row gap wrap"><button class="btn" data-mact="download">' + I('download') + ' 下載 .json 備份</button><button class="btn" data-mact="import">' + I('folder') + ' 匯入備份</button></div>' +
       '<div class="row end"><button class="btn" data-mact="close">關閉</button></div>', {
       copy: () => copyText(link),
       copyJoin: () => copyText($('#joinLink').value),
@@ -656,13 +667,13 @@
       },
       text: () => {
         const txt = tripText(t);
-        openModal('<h3>📝 文字行程</h3><textarea class="textout" readonly id="txtOut">' + esc(txt) + '</textarea><div class="row gap end">' + (navigator.share ? '<button class="btn" data-mact="native">分享…</button>' : '') + '<button class="btn" data-mact="close">關閉</button><button class="btn primary" data-mact="copy">複製</button></div>', {
+        openModal('<h3>文字行程</h3><textarea class="textout" readonly id="txtOut">' + esc(txt) + '</textarea><div class="row gap end">' + (navigator.share ? '<button class="btn" data-mact="native">分享…</button>' : '') + '<button class="btn" data-mact="close">關閉</button><button class="btn primary" data-mact="copy">複製</button></div>', {
           copy: () => copyText(txt), native: () => navigator.share({ title: t.name, text: txt }).catch(() => {}),
         });
       },
       import: () => { closeModal(); $('#fileInput').click(); },
       enableSync: async () => {
-        try { await SY.init(fb); t.synced = true; await SY.push(t); watchTrip(t); save({ silent: true }); updateBadge(); shareModal(); toast('☁️ 已開啟同步'); }
+        try { await SY.init(fb); t.synced = true; await SY.push(t); watchTrip(t); save({ silent: true }); updateBadge(); shareModal(); toast('已開啟同步'); }
         catch (e) { modalMsg('同步失敗', esc(e.message) + '<br>請檢查 Firebase 設定與 README 的安全規則步驟。'); }
       },
       disableSync: () => { t.synced = false; SY.stop(t.id); save({ silent: true }); updateBadge(); shareModal(); },
@@ -702,8 +713,8 @@
   function schedulePush(t) {
     clearTimeout(pushT[t.id]);
     pushT[t.id] = setTimeout(async () => {
-      try { await SY.init(settings().fbConfig); await SY.push(t); setBadge('☁️ 已同步', 'ok'); }
-      catch (e) { setBadge('⚠️ 未同步', 'warn'); }
+      try { await SY.init(settings().fbConfig); await SY.push(t); setBadge('已同步', 'ok'); }
+      catch (e) { setBadge('未同步', 'warn'); }
     }, 1200);
   }
   function watchTrip(t) {
@@ -713,22 +724,22 @@
       const s = C.sanitizeTrip(remote); s.synced = true; s.id = t.id;
       Object.assign(local, s);
       save({ silent: true, fromRemote: true });
-      if (local.id === S.data.current) { renderAll(); toast('☁️ 同行者更新了行程'); }
-    }, () => setBadge('⚠️ 同步中斷', 'warn'));
+      if (local.id === S.data.current) { renderAll(); toast('同行者更新了行程'); }
+    }, () => setBadge('同步中斷', 'warn'));
   }
   function setBadge(text, cls) { const b = $('#syncBadge'); b.hidden = false; b.textContent = text; b.className = 'badge ' + cls; }
-  function updateBadge() { const t = trip(); if (t.synced) setBadge(SY.connected ? '☁️ 已同步' : '☁️ 連線中…', 'ok'); else $('#syncBadge').hidden = true; }
+  function updateBadge() { const t = trip(); if (t.synced) setBadge(SY.connected ? '已同步' : '連線中…', 'ok'); else $('#syncBadge').hidden = true; }
   async function startSync() {
     const fb = settings().fbConfig;
     const synced = S.data.trips.filter((t) => t.synced);
     if (!fb || !synced.length) return;
-    try { await SY.init(fb); synced.forEach(watchTrip); updateBadge(); } catch (e) { setBadge('⚠️ 同步離線', 'warn'); }
+    try { await SY.init(fb); synced.forEach(watchTrip); updateBadge(); } catch (e) { setBadge('同步離線', 'warn'); }
   }
 
   /* ---------- 設定 ---------- */
   function settingsModal() {
     const s = settings(), t = trip();
-    openModal('<h3>⚙️ 設定</h3>' +
+    openModal('<h3>設定</h3>' +
       '<label class="lbl">旅程名稱</label><div class="row gap"><input id="sName" value="' + esc(t.name) + '" class="grow"></div>' +
       '<div class="row gap wrap" style="margin:8px 0"><button class="btn sm" data-mact="newTrip">＋ 新旅程</button><button class="btn sm" data-mact="dupTrip">複製這趟</button><button class="btn sm danger" data-mact="delTrip">刪除這趟</button></div><hr>' +
       '<label class="lbl">Google Maps API 金鑰（選填：大眾運輸實際班次＋更準的地名搜尋）</label>' +
@@ -745,8 +756,8 @@
         const k = $('#sKey').value.trim(); const m = $('#keyMsg');
         if (!k) { m.textContent = '請先貼上金鑰'; return; }
         m.textContent = '測試中…';
-        try { const r = await SV.testGoogleKey(k); m.innerHTML = '✅ 金鑰可用：東京車站→淺草 大眾運輸 ' + C.fmtDur(r.duration); }
-        catch (e) { m.innerHTML = '❌ ' + esc(e.message) + '<br>請確認已啟用 Routes API，且網站限制包含 ' + esc(location.origin); }
+        try { const r = await SV.testGoogleKey(k); m.innerHTML = I('check') + ' 金鑰可用：東京車站→淺草 大眾運輸 ' + C.fmtDur(r.duration); }
+        catch (e) { m.innerHTML = I('warn') + ' ' + esc(e.message) + '<br>請確認已啟用 Routes API，且網站限制包含 ' + esc(location.origin); }
       },
       ok: async () => {
         t.name = $('#sName').value.trim().slice(0, 100) || t.name;
@@ -755,7 +766,7 @@
         const fbText = $('#sFb').value.trim();
         if (fbText) {
           const cfg = SY.parseConfig(fbText);
-          if (!cfg) { $('#fbMsg').innerHTML = '❌ 看不懂這段設定，需要包含 apiKey 和 projectId'; return; }
+          if (!cfg) { $('#fbMsg').innerHTML = I('warn') + ' 看不懂這段設定，需要包含 apiKey 和 projectId'; return; }
           s.fbConfig = cfg;
         } else s.fbConfig = null;
         if (s.tiles !== $('#sTiles').value) { s.tiles = $('#sTiles').value; setTiles(); }
@@ -764,7 +775,7 @@
       newTrip: () => { askText('新旅程', '旅程名稱', '', (name) => { const n = C.newTrip(name || '新旅程'); S.data.trips.push(n); S.data.current = n.id; save(); renderAll(true); }); },
       dupTrip: () => { const n = C.sanitizeTrip(JSON.parse(JSON.stringify(t))); n.id = C.uid(); n.name = t.name + '（副本）'; S.data.trips.push(n); S.data.current = n.id; closeModal(); save(); renderAll(); },
       delTrip: () => {
-        openModal('<h3>刪除「' + esc(t.name) + '」？</h3><p>這趟旅程的 ' + t.places.length + ' 個地點會從這台裝置刪除，無法復原。建議先到 📤 下載備份。</p><div class="row gap end"><button class="btn" data-mact="close">取消</button><button class="btn danger" data-mact="ok">刪除</button></div>', {
+        openModal('<h3>刪除「' + esc(t.name) + '」？</h3><p>這趟旅程的 ' + t.places.length + ' 個地點會從這台裝置刪除，無法復原。建議先到「分享」下載備份。</p><div class="row gap end"><button class="btn" data-mact="close">取消</button><button class="btn danger" data-mact="ok">刪除</button></div>', {
           ok: () => {
             SY.stop(t.id);
             S.data.trips = S.data.trips.filter((x) => x !== t);
@@ -795,7 +806,7 @@
   }
   let toastT = null;
   function toast(msg, ms, action) {
-    const el = $('#toast'); el.textContent = msg; el.hidden = false;
+    const el = $('#toast'); el.textContent = ''; const sp = document.createElement('span'); sp.textContent = msg; el.appendChild(sp); el.hidden = false;
     el.classList.toggle('has-btn', !!action);
     if (action) {
       const b = document.createElement('button'); b.textContent = action.label;
@@ -829,7 +840,7 @@
 
   /* ================= 綁定事件 ================= */
   function renderTripSelect() {
-    $('#tripSelect').innerHTML = S.data.trips.map((t) => '<option value="' + t.id + '"' + (t.id === S.data.current ? ' selected' : '') + '>' + (t.synced ? '☁️ ' : '') + esc(t.name) + '（' + t.places.length + '）</option>').join('') + '<option value="__new">＋ 新增旅程…</option>';
+    $('#tripSelect').innerHTML = S.data.trips.map((t) => '<option value="' + t.id + '"' + (t.id === S.data.current ? ' selected' : '') + '>' + (t.synced ? '⟲ ' : '') + esc(t.name) + '（' + t.places.length + '）</option>').join('') + '<option value="__new">＋ 新增旅程…</option>';
   }
   function renderAll(fit) { renderTripSelect(); renderPanel(true); renderMap(!!fit); updateBadge(); }
 
@@ -948,7 +959,7 @@
       cfg = SY.parseConfig(cfg) || settings().fbConfig;
       if (!cfg) { modalMsg('無法加入', '連結缺少同步設定。'); return; }
       try {
-        toast('☁️ 正在載入共用行程…', 8000);
+        toast('正在載入共用行程…', 8000);
         await SY.init(cfg);
         const remote = C.sanitizeTrip(await SY.fetchOnce(id));
         remote.id = id; remote.synced = true;
@@ -956,7 +967,7 @@
         const exist = S.data.trips.findIndex((x) => x.id === id);
         if (exist >= 0) S.data.trips[exist] = remote; else S.data.trips.push(remote);
         S.data.current = id; save({ silent: true, fromRemote: true }); watchTrip(remote); renderAll(true);
-        toast('☁️ 已加入共用行程「' + remote.name + '」');
+        toast('已加入共用行程「' + remote.name + '」');
       } catch (e) { modalMsg('無法加入共用行程', esc(e.message)); }
     }
   }

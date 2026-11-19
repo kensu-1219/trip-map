@@ -6,7 +6,8 @@
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>旅遊地圖 Trip Map</title>
-<meta name="theme-color" content="#0e7c86">
+<meta name="theme-color" content="#d4cfb8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#13120f" media="(prefers-color-scheme: dark)">
 <meta name="description" content="出國旅遊行程地圖：距離、交通方式、Google 地點匯入、自動排行程">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -21,27 +22,27 @@
 </head>
 <body>
 <header id="topbar">
-  <img id="logo" src="icons/icon-192.png" alt="">
+  <img id="logo" src="icons/icon.svg" alt="">
   <select id="tripSelect" aria-label="選擇旅程"></select>
   <span id="syncBadge" class="badge" hidden></span>
-  <button id="btnShare" class="icon-btn" title="分享">📤</button>
-  <button id="btnSettings" class="icon-btn" title="設定">⚙️</button>
+  <button id="btnShare" class="icon-btn" title="分享與備份"><i data-ic="share"></i></button>
+  <button id="btnSettings" class="icon-btn" title="設定"><i data-ic="settings"></i></button>
 </header>
 
 <div id="map" aria-label="地圖"></div>
 <div id="mapTools">
-  <button id="btnLocate" class="fab" title="我的位置">◎</button>
-  <button id="btnFit" class="fab" title="顯示全部">⤢</button>
+  <button id="btnLocate" class="fab" title="我的位置"><i data-ic="locate"></i></button>
+  <button id="btnFit" class="fab" title="顯示全部"><i data-ic="fit"></i></button>
 </div>
 <div id="pickHint" hidden></div>
 
 <section id="panel" class="half">
   <button id="sheetHandle" aria-label="展開/收合"><span></span></button>
   <nav id="tabs">
-    <button data-tab="plan" class="on">🗓️ 行程</button>
-    <button data-tab="places">📍 地點</button>
-    <button data-tab="add">➕ 新增</button>
-    <button data-tab="measure">📏 量距離</button>
+    <button data-tab="plan" class="on"><i data-ic="plan"></i>行程</button>
+    <button data-tab="places"><i data-ic="places"></i>地點</button>
+    <button data-tab="add"><i data-ic="add"></i>新增</button>
+    <button data-tab="measure"><i data-ic="measure"></i>量距離</button>
   </nav>
   <div id="tabBody"></div>
 </section>
@@ -51,6 +52,7 @@
 <input type="file" id="fileInput" accept=".csv,.json,.geojson,.kml,text/csv,application/json,application/vnd.google-earth.kml+xml" multiple hidden>
 
 <script src="vendor/leaflet/leaflet.js"></script>
+<script src="js/icons.js"></script>
 <script src="js/core.js"></script>
 <script src="js/services.js"></script>
 <script src="js/sync.js"></script>

@@ -4,8 +4,8 @@
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#fbfaf7",
-  "theme_color": "#0e7c86",
+  "background_color": "#d4cfb8",
+  "theme_color": "#d4cfb8",
   "lang": "zh-Hant",
   "description": "出國旅遊行程地圖：距離、交通方式、Google 地點匯入、自動排行程",
   "icons": [
