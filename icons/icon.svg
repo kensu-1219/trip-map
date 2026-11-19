@@ -1,20 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" fill="#d4cfb8"/>
-  <g stroke="#47443a" stroke-opacity=".16" stroke-width="2">
-    <path d="M64 0V512M128 0V512M192 0V512M256 0V512M320 0V512M384 0V512M448 0V512M0 64H512M0 128H512M0 192H512M0 256H512M0 320H512M0 384H512M0 448H512"/>
-  </g>
-  <!-- 角落刻度框 -->
-  <g fill="none" stroke="#47443a" stroke-width="10" stroke-linecap="square">
-    <path d="M70 120V70H120M392 70H442V120M442 392V442H392M120 442H70V392"/>
-  </g>
-  <!-- 路線 -->
-  <path d="M138 384 C 190 330, 230 372, 262 318 S 300 238, 300 212" fill="none" stroke="#b0533b" stroke-width="12" stroke-linecap="square" stroke-dasharray="4 22"/>
-  <rect x="122" y="368" width="32" height="32" transform="rotate(45 138 384)" fill="#47443a"/>
-  <!-- 菱形座標標記 -->
-  <g transform="translate(300 184)">
-    <path d="M0 -112V-84M0 84V112M-112 0H-84M84 0H112" stroke="#47443a" stroke-width="10" stroke-linecap="square"/>
-    <rect x="-62" y="-62" width="124" height="124" transform="rotate(45)" fill="none" stroke="#47443a" stroke-width="10"/>
-    <rect x="-38" y="-38" width="76" height="76" transform="rotate(45)" fill="#47443a"/>
-    <rect x="-14" y="-14" width="28" height="28" transform="rotate(45)" fill="#d4cfb8"/>
-  </g>
+<rect width="512" height="512" fill="#2c2a24"/>
+<path d="M96 150 L208 112 L304 150 L416 112 V362 L304 400 L208 362 L96 400 Z" fill="#d4cfb8"/>
+<path d="M208 112 V362 M304 150 V400" stroke="#2c2a24" stroke-opacity=".35" stroke-width="10"/>
+<path d="M140 340 C 190 300, 240 330, 290 250" fill="none" stroke="#2c2a24" stroke-width="18" stroke-dasharray="4 22" stroke-linecap="square"/>
+<rect x="306" y="166" width="96" height="96" transform="rotate(45 354 214)" fill="#c4583c" stroke="#2c2a24" stroke-width="12"/>
+<rect x="340" y="200" width="28" height="28" transform="rotate(45 354 214)" fill="#d4cfb8"/>
 </svg>

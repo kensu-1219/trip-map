@@ -4,8 +4,10 @@
   const C = window.TripCore, SV = window.TripServices, SY = window.TripSync, LS = SV.LS;
   const I = (n, c) => window.TripIcons.ic(n, c);
   const MODE_IC = { walk: 'walk', bike: 'bike', drive: 'car', transit: 'transit' };
+  const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
+  const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.0';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -66,14 +68,14 @@
   }
   function setTiles() {
     let k = settings().tiles;
-    if (k === 'auto' || !TILES[k]) k = darkMQ && darkMQ.matches ? 'dark' : 'osm';
+    if (k === 'auto' || !TILES[k]) k = isDarkTheme() ? 'dark' : 'osm';
     const t = TILES[k];
     if (tileLayer) map.removeLayer(tileLayer);
     tileLayer = L.tileLayer(t.url, { attribution: t.attr, maxZoom: t.max, subdomains: 'abcd', crossOrigin: true }).addTo(map);
   }
 
-  function pinIcon(color, label, cls, html) {
-    return L.divIcon({ className: 'pin-wrap', html: '<div class="pin ' + (cls || '') + '" style="--c:' + color + '"><span>' + (html || esc(label)) + '</span></div>',
+  function pinIcon(color, label, cls, html, badge) {
+    return L.divIcon({ className: 'pin-wrap', html: '<div class="pin ' + (cls || '') + '" style="--c:' + color + '"><span>' + (html || esc(label)) + '</span>' + (badge ? '<em>' + esc(badge) + '</em>' : '') + '</div>',
       iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -16] });
   }
 
@@ -85,8 +87,9 @@
     const dim = (p) => f && p.day !== f;
     for (const p of t.places) {
       if (dim(p) && t.places.length > 300) continue;
-      const label = p.day ? String(p.order + 1) : '•';
-      const m = L.marker([p.lat, p.lng], { icon: pinIcon(C.dayColor(p.day), label, dim(p) ? 'dim' : ''), title: p.name, zIndexOffset: dim(p) ? -100 : 0 });
+      const num = p.day ? String(p.order + 1) : '';
+      const cls = (dim(p) ? 'dim ' : '') + (p.done ? 'done' : '');
+      const m = L.marker([p.lat, p.lng], { icon: pinIcon(dc(p.day), '', cls, catIc(p.cat), num), title: p.name, zIndexOffset: dim(p) ? -100 : 0 });
       m.bindPopup(() => popupHtml(p), { maxWidth: 260 });
       m.addTo(markerLayer);
     }
@@ -102,7 +105,7 @@
           const leg = legInfo(t, a, b);
           const coords = leg.res.coords && leg.res.coords.length ? leg.res.coords : [[a.lat, a.lng], [b.lat, b.lng]];
           L.polyline(coords, { color: '#2f2c25', weight: (f ? 5 : 4) + 2.5, opacity: 0.35, dashArray: leg.res.estimated ? '2 9' : null, lineCap: 'butt' }).addTo(routeLayer);
-          L.polyline(coords, { color: C.dayColor(d), weight: f ? 4 : 3, opacity: 0.95, dashArray: leg.res.estimated ? '2 9' : null, lineCap: 'butt' }).addTo(routeLayer);
+          L.polyline(coords, { color: dc(d), weight: f ? 4 : 3, opacity: 0.95, dashArray: leg.res.estimated ? '2 9' : null, lineCap: 'butt' }).addTo(routeLayer);
         }
       }
     }
@@ -130,8 +133,10 @@
     const isBase = p.id === 'base';
     return '<div class="pop"><b>' + esc(p.name) + '</b>' +
       (isBase ? '<div class="muted">住宿（每天起終點）</div>' : '<div class="muted">' + (p.day ? 'Day ' + p.day + ' · 第 ' + (p.order + 1) + ' 站' : '尚未排入行程') + '</div>') +
+      (isBase ? '' : '<div class="muted">' + catIc(p.cat) + ' ' + C.CATS[p.cat].label + (p.hours ? ' · ' + I('clock') + ' ' + esc(p.hours) : '') + '</div>') +
       (p.note ? '<div class="note">' + esc(p.note) + '</div>' : '') +
       '<div class="pop-btns">' +
+      (isBase ? '' : '<button class="btn sm" data-act="toggleDone" data-id="' + p.id + '">' + I(p.done ? 'done' : 'undone') + (p.done ? ' 已去過' : ' 打卡') + '</button>') +
       '<a class="btn sm" href="' + esc(C.gmapsPlaceUrl(p)) + '" target="_blank" rel="noopener">Google 地圖</a>' +
       '<button class="btn sm" data-act="measureFrom" data-id="' + p.id + '">從這裡量</button>' +
       '<button class="btn sm" data-act="measureTo" data-id="' + p.id + '">量到這裡</button>' +
@@ -166,7 +171,7 @@
     h.hidden = !mode;
     h.innerHTML = mode ? I('pin') + ' ' + text + ' <button class="btn sm" data-act="cancelPick">取消</button>' : '';
     document.body.classList.toggle('picking', !!mode);
-    if (mode && window.innerWidth < 900) setSheet('peek');
+    if (mode && isMobile()) setSheet('mini');
   }
 
   /* ================= 行程計算 ================= */
@@ -207,14 +212,14 @@
   function switchTab(tab) {
     S.ui.tab = tab;
     document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
-    if (window.innerWidth < 900 && $('#panel').classList.contains('peek')) setSheet('half');
+    if (isMobile() && ($('#panel').classList.contains('peek') || $('#panel').classList.contains('mini'))) setSheet('half');
     renderPanel(); renderMap(false);
   }
 
   function renderPanel(keepScroll) {
     const body = $('#tabBody');
     const st = body.scrollTop;
-    const fn = { plan: renderPlan, places: renderPlaces, add: renderAdd, measure: renderMeasure }[S.ui.tab];
+    const fn = { plan: renderPlan, places: renderPlaces, add: renderAdd, measure: renderMeasure, list: renderList }[S.ui.tab];
     body.innerHTML = fn();
     if (keepScroll) body.scrollTop = st;
     if (S.ui.tab === 'places') { const i = $('#placeSearch'); if (i && S.ui.focusSearch) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }
@@ -232,8 +237,12 @@
       '<div class="row gap base-row">' + I('hotel') + ' <span class="grow">' + (t.base ? '<b>' + esc(t.base.name) + '</b> <span class="muted">每天從這裡出發、回來</span>' : '<span class="muted">未設定住宿（設定後每天會從住宿出發）</span>') + '</span><button class="btn sm" data-act="setBase">' + (t.base ? '更換' : '設定') + '</button></div>' +
       '<button class="btn primary block" data-act="autoplan"' + (t.places.length ? '' : ' disabled') + '>' + I('auto') + ' 自動排行程 <span style="opacity:.7;font-weight:400">· 依遠近分 ' + t.days + ' 天</span></button>';
     if (!t.places.length) return h + welcomeHtml();
-    h += sec('// Route · 每日路線') + '<div class="chips">' + '<button class="chip' + (f ? '' : ' on') + '" data-act="filter" data-d="0">ALL</button>' +
-      range(t.days).map((d) => '<button class="chip' + (f === d ? ' on' : '') + '" data-act="filter" data-d="' + d + '" style="--c:' + C.dayColor(d) + '">D' + String(d).padStart(2, '0') + '</button>').join('') + '</div>';
+    h += todayCard(t);
+    h += sec('// Route · 每日路線') + '<div class="row gap route-bar"><div class="chips grow">' + '<button class="chip' + (f ? '' : ' on') + '" data-act="filter" data-d="0">ALL</button>' +
+      range(t.days).map((d) => '<button class="chip' + (f === d ? ' on' : '') + '" data-act="filter" data-d="' + d + '" style="--c:' + dc(d) + '">D' + String(d).padStart(2, '0') + '</button>').join('') + '</div>' +
+      '<button class="btn sm' + (S.ui.reorder ? ' primary' : '') + '" data-act="reorder">' + I('swap') + (S.ui.reorder ? ' 完成' : ' 調整順序') + '</button></div>';
+    const total = t.places.reduce((a, p) => a + (p.cost || 0), 0);
+    if (total) h += '<div class="muted small">' + I('money') + ' 預估總花費 ' + (t.currency ? esc(t.currency) + ' ' : '') + fmtMoney(total) + '</div>';
     const days = f ? [f] : range(t.days);
     for (const d of days) h += dayBlock(t, d);
     const un = t.places.filter((p) => !p.day || p.day > t.days);
@@ -253,9 +262,11 @@
     const tl = C.timeline(t.dayStart, infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), !!t.base);
     const seq = t.base && stops.length ? [t.base].concat(stops, [t.base]) : stops;
     const mainMode = mostCommonMode(infos);
-    let h = '<div class="day" data-day="' + d + '"><div class="day-h" style="--c:' + C.dayColor(d) + '"><b>DAY ' + String(d).padStart(2, '0') + '</b> <span>' + dayDate(t, d) + '</span>' +
+    let h = '<div class="day" data-day="' + d + '"><div class="day-h" style="--c:' + dc(d) + '"><b>DAY ' + String(d).padStart(2, '0') + '</b> <span>' + dayDate(t, d) + '</span>' +
       (seq.length >= 2 ? '<span class="day-tools"><a class="btn sm ghost" target="_blank" rel="noopener" href="' + esc(C.gmapsDayUrl(seq, mainMode)) + '" title="整天路線在 Google Maps 開啟（最多 9 個中途點）">' + I('nav') + ' 整天導航</a></span>' : '') +
-      '<span class="muted">' + stops.length + ' 站' + (stops.length ? ' · ' + C.hm(C.toMin(t.dayStart)) + '–' + C.hm(tl.end) + ' · 移動 ' + (est ? '約 ' : '') + C.fmtDur(move) + ' · ' + C.fmtDist(dist) + ' · 停留 ' + C.fmtDur(stay) : '') + '</span></div>';
+      weatherChip(t, d) +
+      '<span class="muted">' + stops.length + ' 站' + (stops.length ? ' · ' + C.hm(C.toMin(t.dayStart)) + '–' + C.hm(tl.end) + ' · 移動 ' + (est ? '約 ' : '') + C.fmtDur(move) + ' · ' + C.fmtDist(dist) + ' · 停留 ' + C.fmtDur(stay) : '') +
+      (dayCost(stops) ? ' · 花費 ' + (t.currency ? esc(t.currency) + ' ' : '') + fmtMoney(dayCost(stops)) : '') + '</span></div>';
     if (!stops.length) return h + '<div class="empty sm">這天沒有安排</div></div>';
     let li = 0;
     if (t.base) h += baseRow(t.base, C.hm(C.toMin(t.dayStart)) + ' 出發') + legRow(t, infos[li++]);
@@ -266,6 +277,7 @@
     if (t.base) h += baseRow(t.base, C.hm(tl.end) + ' 回到住宿');
     return h + '</div>';
   }
+  const dayCost = (stops) => stops.reduce((a, p) => a + (p.cost || 0), 0);
   function mostCommonMode(infos) {
     const c = {}; infos.forEach((i) => { c[i.mode] = (c[i.mode] || 0) + 1; });
     return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || 'transit';
@@ -273,16 +285,24 @@
   const baseRow = (b, time) => '<div class="stop base"><span class="num base">' + I('hotel') + '</span><span class="grow">' + esc(b.name) + '</span>' + (time ? '<span class="time">' + time + '</span>' : '') + '</div>';
 
   function stopRow(t, p, unassigned, i, n, tm) {
-    return '<div class="stop" data-id="' + p.id + '">' +
-      '<span class="num" style="--c:' + C.dayColor(unassigned ? 0 : p.day) + '"><span>' + (unassigned ? '·' : p.order + 1) + '</span></span>' +
+    const reorder = S.ui.reorder && !unassigned;
+    const warn = tm && p.hours ? C.hoursWarning(p.hours, tm.arrive, tm.depart) : null;
+    const cur = t.currency ? esc(t.currency) + ' ' : '';
+    return '<div class="stop' + (p.done ? ' is-done' : '') + '" data-id="' + p.id + '">' +
+      '<span class="num" style="--c:' + dc(unassigned ? 0 : p.day) + '"><span>' + (unassigned ? '·' : p.order + 1) + '</span></span>' +
+      '<span class="cat" title="' + C.CATS[p.cat].label + '">' + catIc(p.cat) + '</span>' +
       '<span class="grow"><a href="#" data-act="focus" data-id="' + p.id + '">' + esc(p.name) + '</a>' + (p.locked ? ' <span title="已鎖定在這天" class="muted">' + I('lock') + '</span>' : '') +
-      '<br>' + (tm ? '<span class="time">' + C.hm(tm.arrive) + '–' + C.hm(tm.depart) + '</span> ' : '') + '<span class="muted">停留 ' + C.fmtDur((p.stay || 0) * 60) + (p.note ? ' · ' + esc(p.note.slice(0, 40)) : '') + '</span></span>' +
-      (unassigned ? '' : '<button class="icon-btn sm" data-act="up" data-id="' + p.id + '"' + (i === 0 ? ' disabled' : '') + ' title="往前">' + I('up') + '</button>' +
-        '<button class="icon-btn sm" data-act="down" data-id="' + p.id + '"' + (i === n - 1 ? ' disabled' : '') + ' title="往後">' + I('down') + '</button>') +
-      '<select class="daysel" data-act="moveDay" data-id="' + p.id + '" title="移到哪一天"><option value="0"' + (p.day ? '' : ' selected') + '>未排</option>' +
-      range(t.days).map((d) => '<option value="' + d + '"' + (p.day === d ? ' selected' : '') + '>D' + d + '</option>').join('') + '</select>' +
+      '<br>' + (tm ? '<span class="time">' + C.hm(tm.arrive) + '–' + C.hm(tm.depart) + '</span> ' : '') +
+      '<span class="muted">停留 ' + C.fmtDur((p.stay || 0) * 60) + (p.cost ? ' · ' + cur + fmtMoney(p.cost) : '') + (p.note ? ' · ' + esc(p.note.slice(0, 40)) : '') + '</span>' +
+      (warn ? '<br><span class="warnline">' + I('warn') + ' ' + esc(warn) + '</span>' : '') + '</span>' +
+      (reorder ? '<button class="icon-btn sm" data-act="up" data-id="' + p.id + '"' + (i === 0 ? ' disabled' : '') + ' title="往前">' + I('up') + '</button>' +
+        '<button class="icon-btn sm" data-act="down" data-id="' + p.id + '"' + (i === n - 1 ? ' disabled' : '') + ' title="往後">' + I('down') + '</button>' : '') +
+      (reorder || unassigned ? '<select class="daysel" data-act="moveDay" data-id="' + p.id + '" title="移到哪一天"><option value="0"' + (p.day ? '' : ' selected') + '>未排</option>' +
+        range(t.days).map((d) => '<option value="' + d + '"' + (p.day === d ? ' selected' : '') + '>D' + d + '</option>').join('') + '</select>' : '') +
+      (reorder ? '' : '<button class="icon-btn sm tick' + (p.done ? ' on' : '') + '" data-act="toggleDone" data-id="' + p.id + '" title="' + (p.done ? '已去過（再按取消）' : '打卡：標記已去過') + '">' + I(p.done ? 'done' : 'undone') + '</button>') +
       '<button class="icon-btn sm" data-act="edit" data-id="' + p.id + '" title="編輯">' + I('edit') + '</button></div>';
   }
+  const fmtMoney = (n) => Math.round(n).toLocaleString('en-US');
 
   function legRow(t, li) {
     if (!li) return '';
@@ -305,16 +325,22 @@
   function renderPlaces() {
     const t = trip();
     const q = S.ui.search.trim().toLowerCase();
-    const list = t.places.filter((p) => !q || (p.name + ' ' + p.note + ' ' + p.address).toLowerCase().includes(q));
+    const cf = S.ui.catFilter || '';
+    const counts = {};
+    t.places.forEach((p) => { counts[p.cat] = (counts[p.cat] || 0) + 1; });
+    const list = t.places.filter((p) => (!cf || p.cat === cf) && (!q || (p.name + ' ' + p.note + ' ' + p.address).toLowerCase().includes(q)));
     let h = sec('// Locations · ' + t.places.length) + '<div class="row gap"><input id="placeSearch" type="search" placeholder="篩選 ' + t.places.length + ' 個地點…" value="' + esc(S.ui.search) + '" class="grow"></div>';
     if (!t.places.length) return h + '<div class="empty">還沒有地點。</div>';
+    h += '<div class="chips catchips"><button class="chip' + (cf ? '' : ' on') + '" data-act="catFilter" data-c="">全部 ' + t.places.length + '</button>' +
+      Object.keys(C.CATS).filter((k) => counts[k]).map((k) => '<button class="chip ic-chip' + (cf === k ? ' on' : '') + '" data-act="catFilter" data-c="' + k + '" title="' + C.CATS[k].label + '">' + catIc(k) + ' ' + counts[k] + '</button>').join('') + '</div>';
     const shown = list.slice(0, 300);
-    h += shown.map((p) => '<div class="stop" data-id="' + p.id + '"><span class="num" style="--c:' + C.dayColor(p.day) + '"><span>' + (p.day ? p.day : '·') + '</span></span>' +
-      '<span class="grow"><a href="#" data-act="focus" data-id="' + p.id + '">' + esc(p.name) + '</a><br><span class="muted">' + esc((p.note || p.address || '').slice(0, 60)) + '</span></span>' +
+    h += shown.map((p) => '<div class="stop' + (p.done ? ' is-done' : '') + '" data-id="' + p.id + '"><span class="num" style="--c:' + dc(p.day) + '"><span>' + (p.day ? p.day : '·') + '</span></span>' +
+      '<span class="cat">' + catIc(p.cat) + '</span>' +
+      '<span class="grow"><a href="#" data-act="focus" data-id="' + p.id + '">' + esc(p.name) + '</a><br><span class="muted">' + C.CATS[p.cat].label + (p.hours ? ' · ' + esc(p.hours) : '') + (p.note || p.address ? ' · ' + esc((p.note || p.address || '').slice(0, 50)) : '') + '</span></span>' +
       '<a class="icon-btn sm" href="' + esc(C.gmapsPlaceUrl(p)) + '" target="_blank" rel="noopener" title="在 Google 地圖開啟">' + I('ext') + '</a>' +
       '<button class="icon-btn sm" data-act="edit" data-id="' + p.id + '">' + I('edit') + '</button></div>').join('');
     if (list.length > shown.length) h += '<div class="muted center">還有 ' + (list.length - shown.length) + ' 個，請用上方篩選</div>';
-    h += '<button class="btn danger block" data-act="clearPlaces">刪除全部地點</button>';
+    h += '<button class="btn danger block" data-act="clearPlaces">' + I('trash') + ' 刪除全部地點</button>';
     return h;
   }
 
@@ -326,7 +352,7 @@
     if (S.ui.addMsg) h += '<div class="msg">' + S.ui.addMsg + '</div>';
     if (S.ui.results) {
       h += '<div class="results"><div class="muted">搜尋結果（' + (S.ui.results.source || '') + '）— 點一下加入：</div>' +
-        (S.ui.results.list.length ? S.ui.results.list.map((r, i) => '<button class="result" data-act="pickResult" data-i="' + i + '"><b>' + esc(r.name) + '</b><br><span class="muted">' + esc(r.address) + '</span></button>').join('') : '<div class="empty sm">找不到，換個關鍵字（加上城市名通常有幫助）</div>') + '</div>';
+        (S.ui.results.list.length ? S.ui.results.list.map((r, i) => '<button class="result" data-act="pickResult" data-i="' + i + '">' + catIc(r.cat || C.guessCat(r.name)) + ' <b>' + esc(r.name) + '</b><br><span class="muted">' + esc(r.address) + '</span></button>').join('') : '<div class="empty sm">找不到，換個關鍵字（加上城市名通常有幫助）</div>') + '</div>';
     }
     if (geo) {
       h += '<div class="msg">' + I('search') + ' 正在查詢沒有座標的地點：' + geo.done + ' / ' + geo.total + (geo.failed.length ? '，找不到 ' + geo.failed.length + ' 個' : '') + (geo.done < geo.total ? '（每秒約 1 個）' : ' — 完成') + '</div>';
@@ -382,6 +408,162 @@
     return h;
   }
 
+
+  /* ================= 主題（每趟旅程各自設定） ================= */
+  const THEME_INFO = {
+    auto: { name: '自動', desc: '跟隨手機：淺色＝羊皮紙、深色＝暗金', sw: ['#d4cfb8', '#47443a', '#13120f', '#c9a85a'] },
+    parchment: { name: '羊皮紙終端', desc: '米灰紙張、墨褐細線、方角反白', sw: ['#d4cfb8', '#dcd8c3', '#47443a', '#b0533b'], dark: false },
+    relic: { name: '暗金遺跡', desc: '炭黑底、古金細線、暖白文字', sw: ['#13120f', '#1b1915', '#c9a85a', '#d26a42'], dark: true },
+    neon: { name: '霓虹街頭', desc: '黑底螢光黃、粗框貼紙感', sw: ['#101012', '#f2e600', '#ff3d7f', '#2de2e6'], dark: true },
+    washi: { name: '和紙朱印', desc: '米白和紙、墨黑、朱紅印章', sw: ['#f5f0e6', '#2a2a2a', '#c8102e', '#264a7a'], dark: false },
+    tide: { name: '海島晴空', desc: '白沙、海藍、珊瑚橘、圓角', sw: ['#f4f7f6', '#0a7ea4', '#ff7a59', '#ffd166'], dark: false },
+  };
+  const THEME_PAL = {
+    parchment: ['#b0533b', '#3f6e78', '#6b7a35', '#7d4f7a', '#b4862f', '#9a4558', '#3c5a86', '#5f7f68', '#8a6a4b', '#6e6a5c'],
+    relic: ['#d26a42', '#5e9ca8', '#a3b26b', '#b98ab6', '#d9b45a', '#cf7186', '#7d9bd1', '#8fb59c', '#c39b73', '#a39a82'],
+    neon: ['#f2e600', '#ff3d7f', '#2de2e6', '#9b5cff', '#ff8a00', '#3dff8f', '#ff5c5c', '#5c9dff', '#ffffff', '#c0c0c0'],
+    washi: ['#c8102e', '#264a7a', '#3f7a4a', '#7a3f6e', '#c47b12', '#1f6f78', '#8c5a2b', '#5a5a9c', '#a33a5c', '#555555'],
+    tide: ['#ff7a59', '#0a7ea4', '#2a9d8f', '#e9a400', '#7b5ea7', '#e05780', '#3a86ff', '#43aa8b', '#f3722c', '#6c757d'],
+  };
+  const darkMQ2 = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  function activeTheme(name) {
+    const th = name || (trip() ? trip().theme : 'auto') || 'auto';
+    if (th !== 'auto' && THEME_INFO[th]) return th;
+    return darkMQ2 && darkMQ2.matches ? 'relic' : 'parchment';
+  }
+  const isDarkTheme = (name) => !!THEME_INFO[activeTheme(name)].dark;
+  function applyTheme(preview) {
+    const th = activeTheme(preview);
+    document.documentElement.dataset.theme = th;
+    const meta = document.querySelectorAll('meta[name="theme-color"]');
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--paper').trim() || '#d4cfb8';
+    meta.forEach((m) => { m.setAttribute('content', bg); m.removeAttribute('media'); });
+    if (map) { setTiles(); if (preview) renderMap(false); }
+  }
+  function themePicker(current) {
+    return '<div class="themepick">' + Object.entries(THEME_INFO).map(([k, v]) => '<button type="button" class="themeopt' + (current === k ? ' on' : '') + '" data-theme="' + k + '">' +
+      '<span class="sw">' + v.sw.map((c) => '<i style="background:' + c + '"></i>').join('') + '</span><b>' + v.name + '</b><small>' + v.desc + '</small></button>').join('') + '</div>';
+  }
+
+  /* ================= 天氣（Open-Meteo，免金鑰，16 天內） ================= */
+  const WX_KEY = 'tripmap.wx.v1';
+  let wx = LS.get(WX_KEY, {});
+  const wxPending = new Set();
+  function wxIcon(code) {
+    if (code == null) return 'cloudy';
+    if (code <= 1) return 'sun';
+    if (code <= 3) return 'cloudy';
+    if (code <= 48) return 'fog';
+    if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'snow';
+    if (code >= 95) return 'storm';
+    return 'rain';
+  }
+  function dayISO(t, d) {
+    if (!t.startDate) return '';
+    const dt = new Date(t.startDate + 'T00:00:00'); dt.setDate(dt.getDate() + d - 1);
+    return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+  }
+  function weatherChip(t, d) {
+    const iso = dayISO(t, d);
+    if (!iso) return '';
+    const days = (new Date(iso + 'T12:00:00') - Date.now()) / 864e5;
+    if (days > 15.5 || days < -1) return '';
+    const stops = C.dayStops(t, d);
+    const pts = stops.length ? stops : t.base ? [t.base] : t.places.slice(0, 1);
+    if (!pts.length) return '';
+    const c = C.centroid(pts);
+    const key = iso + '@' + c.lat.toFixed(1) + ',' + c.lng.toFixed(1);
+    const w = wx[key];
+    if (w && Date.now() - w.t < 3 * 3600e3) {
+      return '<span class="wx" title="天氣預報（Open-Meteo）">' + I(wxIcon(w.code)) + ' ' + Math.round(w.lo) + '°/' + Math.round(w.hi) + '°' + (w.pop != null ? ' · ' + w.pop + '%' : '') + '</span>';
+    }
+    if (!wxPending.has(key) && navigator.onLine !== false) {
+      wxPending.add(key);
+      const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + c.lat.toFixed(3) + '&longitude=' + c.lng.toFixed(3) +
+        '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&start_date=' + iso + '&end_date=' + iso;
+      SV.fetchJSON(url, {}, 10000).then((j) => {
+        const dd = j && j.daily;
+        if (dd && dd.time && dd.time.length) {
+          wx[key] = { t: Date.now(), code: dd.weather_code[0], hi: dd.temperature_2m_max[0], lo: dd.temperature_2m_min[0], pop: dd.precipitation_probability_max ? dd.precipitation_probability_max[0] : null };
+          const keys = Object.keys(wx); if (keys.length > 200) keys.slice(0, keys.length - 150).forEach((k) => delete wx[k]);
+          LS.set(WX_KEY, wx); scheduleRender();
+        }
+      }).catch(() => {}).finally(() => setTimeout(() => wxPending.delete(key), 60000));
+    }
+    return '';
+  }
+
+  /* ================= 今天模式（旅行中） ================= */
+  function todayIndex(t) {
+    if (!t.startDate) return 0;
+    const now = new Date(); now.setHours(12, 0, 0, 0);
+    const st = new Date(t.startDate + 'T12:00:00');
+    const d = Math.round((now - st) / 864e5) + 1;
+    return d >= 1 && d <= t.days ? d : 0;
+  }
+  function todayCard(t) {
+    const d = todayIndex(t);
+    if (!d) return '';
+    const stops = C.dayStops(t, d);
+    const next = stops.find((p) => !p.done);
+    const doneN = stops.filter((p) => p.done).length;
+    let h = '<div class="today"><div class="today-h">' + I('today') + ' <b>今天是 DAY ' + String(d).padStart(2, '0') + '</b><span class="muted">' + doneN + ' / ' + stops.length + ' 已去</span>' +
+      (S.ui.dayFilter !== d ? '<button class="btn sm" data-act="gotoToday" data-d="' + d + '">只看今天</button>' : '') + '</div>';
+    if (next) {
+      const prevDone = stops.filter((p) => p.done).pop();
+      const from = S.ui.me || prevDone || t.base;
+      const mode = from ? (t.legModes[C.legKey(from, next)] || C.suggestMode(C.haversine(from, next))) : 'transit';
+      h += '<div class="today-next"><span class="cat">' + catIc(next.cat) + '</span><span class="grow"><small class="muted">下一站</small><br><b>' + esc(next.name) + '</b>' +
+        (next.hours ? '<br><span class="muted">' + I('clock') + ' ' + esc(next.hours) + '</span>' : '') + '</span>' +
+        (from ? '<a class="btn sm primary" target="_blank" rel="noopener" href="' + esc(C.gmapsDirUrl(from, next, mode)) + '">' + I('nav') + ' 導航</a>' : '') +
+        '<button class="btn sm" data-act="toggleDone" data-id="' + next.id + '">' + I('done') + ' 打卡</button></div>';
+    } else if (stops.length) h += '<div class="muted small">今天的行程都完成了，辛苦了！</div>';
+    return h + '</div>';
+  }
+
+  /* ================= 行前清單 ================= */
+  const CL_TEMPLATE = {
+    '證件': ['護照（效期 6 個月以上）', '機票／登機證', '住宿確認信', '旅遊保險資料', '駕照與國際駕照（要開車才需要）'],
+    '金錢': ['外幣現金', '信用卡（兩張以上）', '交通卡（Suica 等）'],
+    '電子': ['手機充電器', '行動電源（放隨身行李）', '轉接頭', '網卡／eSIM', '耳機'],
+    '衣物': ['換洗衣物', '睡衣', '好走的鞋', '外套／雨具'],
+    '其他': ['常備藥品', '盥洗用品', '環保袋', '筆（填入境卡）'],
+  };
+  function renderList() {
+    const t = trip();
+    const items = t.checklist || [];
+    const done = items.filter((c) => c.done).length;
+    let h = sec('// Checklist · 行前清單 ' + done + '/' + items.length) +
+      '<div class="row gap"><input id="clInput" placeholder="新增項目，例如：轉接頭" class="grow" maxlength="200"><input id="clGroup" placeholder="分類" style="width:86px" maxlength="30" value="' + esc(S.ui.clGroup || '') + '"><button class="btn primary" data-act="clAdd">' + I('add') + '</button></div>';
+    if (!items.length) {
+      return h + '<div class="empty">清單是空的。可以自己新增，或先載入常用的行李清單再刪改。<br><button class="btn block" data-act="clTemplate">' + I('list') + ' 載入常用行李清單</button></div>';
+    }
+    const groups = {};
+    items.forEach((c, i) => { (groups[c.g || '未分類'] = groups[c.g || '未分類'] || []).push([c, i]); });
+    for (const [g, arr] of Object.entries(groups)) {
+      h += '<div class="clgroup"><div class="cl-h">' + esc(g) + ' <span class="muted">' + arr.filter(([c]) => c.done).length + '/' + arr.length + '</span></div>' +
+        arr.map(([c, i]) => '<div class="clitem' + (c.done ? ' is-done' : '') + '"><button class="icon-btn sm tick' + (c.done ? ' on' : '') + '" data-act="clToggle" data-i="' + i + '">' + I(c.done ? 'done' : 'undone') + '</button>' +
+          '<span class="grow">' + esc(c.t) + '</span><button class="icon-btn sm ghost-btn" data-act="clDel" data-i="' + i + '" title="刪除">' + I('close') + '</button></div>').join('') + '</div>';
+    }
+    h += '<div class="row gap wrap" style="margin-top:12px">' + (done ? '<button class="btn sm" data-act="clClearDone">' + I('trash') + ' 清除已勾選</button>' : '') + '<button class="btn sm" data-act="clTemplate">' + I('list') + ' 補上常用項目</button></div>';
+    return h;
+  }
+  function clAdd() {
+    const inp = $('#clInput'); const v = (inp && inp.value || '').trim();
+    if (!v) return;
+    const g = ($('#clGroup').value || '').trim().slice(0, 30);
+    S.ui.clGroup = g;
+    trip().checklist.push({ t: v.slice(0, 200), done: false, g });
+    save(); renderPanel(true);
+    const ni = $('#clInput'); if (ni) ni.focus();
+  }
+  function clTemplate() {
+    const t = trip(); const have = new Set(t.checklist.map((c) => c.t));
+    let n = 0;
+    for (const [g, arr] of Object.entries(CL_TEMPLATE)) for (const x of arr) if (!have.has(x)) { t.checklist.push({ t: x, done: false, g }); n++; }
+    save(); renderPanel(true); toast(n ? '已加入 ' + n + ' 個常用項目' : '常用項目都已經在清單裡了');
+  }
+
   /* ---------- 歡迎畫面、範例、安裝提醒 ---------- */
   function welcomeHtml() {
     return '<div class="welcome"><svg class="art" viewBox="0 0 300 150" aria-hidden="true" fill="none" stroke="currentColor">' +
@@ -418,7 +600,9 @@
       ['明治神宮', 35.6764, 139.6993, ''], ['原宿竹下通', 35.6716, 139.7031, ''], ['澀谷十字路口', 35.6595, 139.7005, 'SHIBUYA SKY 看夜景'], ['表參道', 35.6652, 139.7123, ''],
       ['築地場外市場', 35.6655, 139.7707, '早餐吃海鮮'], ['teamLab Planets', 35.6491, 139.7898, '需預約'], ['台場', 35.6251, 139.7756, ''], ['東京鐵塔', 35.6586, 139.7454, ''],
     ];
-    n.places = pts.map(([name, lat, lng, note]) => C.sanitizePlace({ name, lat, lng, note }));
+    n.currency = '¥';
+    const extra = { '淺草寺': ['06:00-17:00', 0], '東京晴空塔': ['10:00-21:00', 3100], 'teamLab Planets': ['09:00-22:00', 3800], '築地場外市場': ['05:00-14:00', 2500], '明治神宮': ['06:00-16:30', 0], '阿美橫丁': ['10:00-20:00', 1500] };
+    n.places = pts.map(([name, lat, lng, note]) => C.sanitizePlace({ name, lat, lng, note, hours: (extra[name] || [])[0], cost: (extra[name] || [])[1] }));
     n.places = C.planDays(n);
     S.data.trips.push(n); S.data.current = n.id; save(); renderAll(true);
     toast('已載入範例，可以隨意修改或在設定裡刪除');
@@ -570,10 +754,14 @@
     if (!p) return;
     openModal('<h3>編輯地點</h3>' +
       '<label class="lbl">名稱</label><input id="eName" value="' + esc(p.name) + '">' +
+      '<label class="lbl">分類</label><div class="catpick" id="eCat">' + Object.entries(C.CATS).map(([k, c]) => '<button type="button" class="catopt' + (p.cat === k ? ' on' : '') + '" data-cat="' + k + '" title="' + c.label + '">' + catIc(k) + '<small>' + c.label + '</small></button>').join('') + '</div>' +
       '<label class="lbl">備註</label><textarea id="eNote" rows="3">' + esc(p.note) + '</textarea>' +
+      '<div class="row gap"><label class="field grow">' + I('clock') + ' 營業時間<input id="eHours" placeholder="10:00-18:00" value="' + esc(p.hours) + '"></label></div>' +
+      '<div class="row gap" style="margin-top:8px"><label class="field grow">' + I('money') + ' 預估花費<input id="eCost" type="number" min="0" step="1" inputmode="decimal" value="' + (p.cost || '') + '" placeholder="0"></label><span class="muted">' + esc(t.currency || '') + '</span></div>' +
       '<div class="row gap"><label class="field">停留（分鐘）<input id="eStay" type="number" min="0" max="1440" step="15" value="' + p.stay + '"></label>' +
       '<label class="field">天數 <select id="eDay"><option value="0">未排</option>' + range(t.days).map((d) => '<option value="' + d + '"' + (p.day === d ? ' selected' : '') + '>Day ' + d + '</option>').join('') + '</select></label></div>' +
       '<label class="check"><input type="checkbox" id="eLock"' + (p.locked ? ' checked' : '') + '> 鎖定在這天（自動排行程不會移動）</label>' +
+      '<label class="check"><input type="checkbox" id="eDone"' + (p.done ? ' checked' : '') + '> 已去過（打卡）</label>' +
       '<div class="muted small">座標 ' + p.lat.toFixed(6) + ', ' + p.lng.toFixed(6) + '</div>' +
       '<div class="row gap end"><button class="btn danger" data-mact="del">刪除</button><span class="grow"></span><button class="btn" data-mact="close">取消</button><button class="btn primary" data-mact="ok">儲存</button></div>', {
       ok: () => {
@@ -583,6 +771,10 @@
         const nd = parseInt($('#eDay').value, 10) || 0;
         if (nd !== p.day) { p.day = nd; p.order = 999; for (let k = 1; k <= t.days; k++) C.dayStops(t, k).forEach((s, i) => { s.order = i; }); }
         p.locked = $('#eLock').checked && p.day > 0;
+        p.done = $('#eDone').checked;
+        const sel = $('#eCat .catopt.on'); if (sel) p.cat = sel.dataset.cat;
+        p.hours = $('#eHours').value.trim().slice(0, 60);
+        const cst = parseFloat($('#eCost').value); p.cost = Number.isFinite(cst) && cst > 0 ? cst : 0;
         closeModal(); save(); renderAll();
       },
       del: () => {
@@ -692,7 +884,7 @@
       const legTxt = (x) => '   ↓ ' + C.MODES[x.mode].icon + ' ' + (x.res.estimated ? '約' : '') + C.fmtDur(x.res.duration) + '（' + C.fmtDist(x.res.distance) + '）';
       if (t.base) { lines.push(C.hm(C.toMin(t.dayStart)) + ' 從住宿出發'); lines.push(legTxt(infos[li++])); }
       stops.forEach((p, i) => {
-        lines.push(C.hm(tl.stops[i].arrive) + ' ' + p.name + (p.note ? '（' + p.note.replace(/\s+/g, ' ').slice(0, 60) + '）' : ''));
+        lines.push(C.hm(tl.stops[i].arrive) + ' ' + C.CATS[p.cat].emoji + ' ' + p.name + (p.note ? '（' + p.note.replace(/\s+/g, ' ').slice(0, 60) + '）' : ''));
         lines.push('   ' + C.gmapsPlaceUrl(p));
         if (i < stops.length - 1 || t.base) lines.push(legTxt(infos[li++]));
       });
@@ -741,6 +933,8 @@
     const s = settings(), t = trip();
     openModal('<h3>設定</h3>' +
       '<label class="lbl">旅程名稱</label><div class="row gap"><input id="sName" value="' + esc(t.name) + '" class="grow"></div>' +
+      '<label class="lbl">' + I('theme') + ' 這趟旅程的主題風格（點一下預覽）</label>' + themePicker(t.theme || 'auto') +
+      '<label class="lbl">' + I('money') + ' 花費幣別（顯示用，例如 ¥、JPY、NT$）</label><input id="sCur" value="' + esc(t.currency || '') + '" maxlength="5" placeholder="¥" style="width:120px">' +
       '<div class="row gap wrap" style="margin:8px 0"><button class="btn sm" data-mact="newTrip">＋ 新旅程</button><button class="btn sm" data-mact="dupTrip">複製這趟</button><button class="btn sm danger" data-mact="delTrip">刪除這趟</button></div><hr>' +
       '<label class="lbl">Google Maps API 金鑰（選填：大眾運輸實際班次＋更準的地名搜尋）</label>' +
       '<div class="row gap"><input id="sKey" type="password" autocomplete="off" placeholder="AIza…" value="' + esc(s.gkey) + '" class="grow"><button class="btn sm" data-mact="testKey">測試</button></div>' +
@@ -761,6 +955,8 @@
       },
       ok: async () => {
         t.name = $('#sName').value.trim().slice(0, 100) || t.name;
+        const thSel = $('#modalBody .themeopt.on'); if (thSel) t.theme = thSel.dataset.theme;
+        t.currency = ($('#sCur').value || '').trim().slice(0, 5);
         const newKey = $('#sKey').value.trim();
         if (newKey !== s.gkey) { s.gkey = newKey; S.requested.clear(); S.legs = {}; }
         const fbText = $('#sFb').value.trim();
@@ -797,7 +993,7 @@
     const f = $('#modalBody input:not([readonly]), #modalBody textarea');
     if (f && window.innerWidth >= 900) f.focus();
   }
-  function closeModal() { $('#modal').hidden = true; $('#modalBody').innerHTML = ''; modalActs = {}; }
+  function closeModal() { const hadTheme = !!$('#modalBody .themepick'); $('#modal').hidden = true; $('#modalBody').innerHTML = ''; modalActs = {}; if (hadTheme) { applyTheme(); renderMap(false); } }
   function modalMsg(title, html) { openModal('<h3>' + title + '</h3><p>' + html + '</p><div class="row end"><button class="btn primary" data-mact="close">好</button></div>'); }
   function askText(title, label, def, cb) {
     openModal('<h3>' + esc(title) + '</h3><label class="lbl">' + esc(label) + '</label><input id="askIn" value="' + esc(def) + '"><div class="row gap end"><button class="btn" data-mact="close">取消</button><button class="btn primary" data-mact="ok">確定</button></div>',
@@ -833,26 +1029,94 @@
   const undoAct = { label: '復原', fn: undo };
 
   /* ---------- 底部面板 ---------- */
+  /* 手機：可拖曳的底部面板。狀態名稱：mini（只剩分頁列）、peek、half、full */
+  const isMobile = () => window.innerWidth < 900;
+  function sheetSnaps() {
+    const vh = window.innerHeight, top = $('#topbar').getBoundingClientRect().height;
+    return { mini: 74, peek: Math.round(vh * 0.3), half: Math.round(vh * 0.52), full: vh - top - 8 };
+  }
+  function applySheetH(h, animate) {
+    const p = $('#panel');
+    const sn = sheetSnaps();
+    h = Math.max(sn.mini, Math.min(sn.full, Math.round(h)));
+    p.classList.toggle('dragging', !animate);
+    p.style.height = h + 'px';
+    const state = Object.entries(sn).reduce((a, b) => (Math.abs(b[1] - h) < Math.abs(a[1] - h) ? b : a))[0];
+    p.classList.remove('mini', 'peek', 'half', 'full'); p.classList.add(state);
+    document.documentElement.style.setProperty('--sheet-h', h + 'px');
+    return state;
+  }
   function setSheet(state) {
-    const p = $('#panel'); p.classList.remove('peek', 'half', 'full'); p.classList.add(state);
-    setTimeout(() => map.invalidateSize(), 260);
+    if (!isMobile()) return;
+    const sn = sheetSnaps();
+    applySheetH(sn[state] || sn.half, true);
+    S.data.flags.sheet = state; save({ silent: true });
+    clearTimeout(setSheet.t); setSheet.t = setTimeout(() => map.invalidateSize(), 280);
+  }
+  function bindSheetDrag() {
+    const p = $('#panel');
+    let startY = 0, startH = 0, dragging = false, moved = false, lastY = 0, lastT = 0, vel = 0, pid = null;
+    const down = (e) => {
+      if (!isMobile()) return;
+      if (e.target.closest('#tabs') && e.pointerType === 'mouse' && e.button !== 0) return;
+      startY = lastY = e.clientY; startH = p.getBoundingClientRect().height; lastT = performance.now();
+      dragging = true; moved = false; vel = 0; pid = e.pointerId;
+    };
+    const move = (e) => {
+      if (!dragging || e.pointerId !== pid) return;
+      const dy = e.clientY - startY;
+      if (!moved && Math.abs(dy) < 8) return;
+      if (!moved) moved = true;
+      const now = performance.now();
+      vel = (e.clientY - lastY) / Math.max(1, now - lastT); lastY = e.clientY; lastT = now;
+      applySheetH(startH - dy, false);
+      e.preventDefault();
+    };
+    const up = () => {
+      if (!dragging) return;
+      dragging = false;
+      if (!moved) return;
+      const sn = sheetSnaps();
+      const h = p.getBoundingClientRect().height;
+      // 甩動：往上快速 → 下一個較高的段，往下快速 → 較低的段
+      const order = ['mini', 'peek', 'half', 'full'];
+      let target = order.reduce((a, b) => (Math.abs(sn[b] - h) < Math.abs(sn[a] - h) ? b : a));
+      if (Math.abs(vel) > 0.6) {
+        const sorted = order.filter((k) => (vel < 0 ? sn[k] > h : sn[k] < h));
+        target = vel < 0 ? (sorted[0] || 'full') : (sorted[sorted.length - 1] || 'mini');
+      }
+      setSheet(target);
+      p._justDragged = Date.now();
+    };
+    for (const el of [$('#sheetHandle'), $('#tabs')]) {
+      el.addEventListener('pointerdown', down);
+      el.style.touchAction = 'none';
+    }
+    window.addEventListener('pointermove', move, { passive: false });
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    // 拖曳完不要觸發分頁點擊
+    $('#tabs').addEventListener('click', (e) => { if (p._justDragged && Date.now() - p._justDragged < 350) e.stopImmediatePropagation(); }, true);
+    window.addEventListener('resize', () => { if (isMobile()) setSheet(S.data.flags.sheet || 'half'); else { p.style.height = ''; map.invalidateSize(); } });
   }
 
   /* ================= 綁定事件 ================= */
   function renderTripSelect() {
     $('#tripSelect').innerHTML = S.data.trips.map((t) => '<option value="' + t.id + '"' + (t.id === S.data.current ? ' selected' : '') + '>' + (t.synced ? '⟲ ' : '') + esc(t.name) + '（' + t.places.length + '）</option>').join('') + '<option value="__new">＋ 新增旅程…</option>';
   }
-  function renderAll(fit) { renderTripSelect(); renderPanel(true); renderMap(!!fit); updateBadge(); }
+  function renderAll(fit) { applyTheme(); renderTripSelect(); renderPanel(true); renderMap(!!fit); updateBadge(); }
 
   function bind() {
     $('#tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (b) switchTab(b.dataset.tab); });
     $('#sheetHandle').addEventListener('click', () => {
       const p = $('#panel');
-      setSheet(p.classList.contains('peek') ? 'half' : p.classList.contains('half') ? 'full' : 'peek');
+      if (p._justDragged && Date.now() - p._justDragged < 350) return;
+      setSheet(p.classList.contains('mini') || p.classList.contains('peek') ? 'half' : p.classList.contains('half') ? 'full' : 'mini');
     });
+    bindSheetDrag();
     $('#tripSelect').addEventListener('change', (e) => {
       if (e.target.value === '__new') { renderTripSelect(); askText('新旅程', '旅程名稱', '', (name) => { const n = C.newTrip(name || '新旅程'); S.data.trips.push(n); S.data.current = n.id; save(); renderAll(true); }); return; }
-      S.data.current = e.target.value; S.ui.dayFilter = 0; S.ui.measure = { a: '', b: '' }; save({ silent: true }); renderAll(true);
+      S.data.current = e.target.value; S.ui.dayFilter = todayIndex(trip()) || 0; S.ui.measure = { a: '', b: '' }; S.ui.catFilter = ''; save({ silent: true }); renderAll(true);
     });
     $('#btnSettings').addEventListener('click', settingsModal);
     $('#btnShare').addEventListener('click', shareModal);
@@ -861,6 +1125,10 @@
     $('#fileInput').addEventListener('change', (e) => { const fs = Array.from(e.target.files || []); e.target.value = ''; importFiles(fs); });
     $('#modal').addEventListener('click', (e) => {
       if (e.target.id === 'modal') { closeModal(); return; }
+      const co = e.target.closest('.catopt');
+      if (co) { co.parentElement.querySelectorAll('.catopt').forEach((x) => x.classList.toggle('on', x === co)); return; }
+      const th = e.target.closest('.themeopt');
+      if (th) { th.parentElement.querySelectorAll('.themeopt').forEach((x) => x.classList.toggle('on', x === th)); applyTheme(th.dataset.theme); return; }
       const b = e.target.closest('[data-mact]'); if (!b) return;
       const a = b.dataset.mact;
       if (a === 'close') closeModal(); else if (modalActs[a]) modalActs[a]();
@@ -890,7 +1158,7 @@
         case 'pickAdd': setPick('add'); break;
         case 'pickResult': {
           const r = S.ui.results.list[+el.dataset.i];
-          addPlaces([{ name: r.name, lat: r.lat, lng: r.lng, address: r.address, url: r.url || '' }]);
+          addPlaces([{ name: r.name, lat: r.lat, lng: r.lng, address: r.address, url: r.url || '', cat: r.cat || '' }]);
           S.ui.results = null; S.ui.addMsg = ''; const ai = $('#addInput'); if (ai) ai.value = ''; renderPanel(); break;
         }
         case 'import': $('#fileInput').click(); break;
@@ -905,6 +1173,15 @@
         case 'measureTo': S.ui.measure.b = id; map.closePopup(); switchTab('measure'); break;
         case 'cancelPick': setPick(null); break;
         case 'sample': loadSample(); break;
+        case 'toggleDone': { const p = t.places.find((x) => x.id === id); if (p) { p.done = !p.done; save(); renderPanel(true); renderMap(false); if (p.done) toast('已打卡「' + p.name + '」', 4000, { label: '取消', fn: () => { p.done = false; save(); renderAll(); } }); } break; }
+        case 'reorder': S.ui.reorder = !S.ui.reorder; renderPanel(true); break;
+        case 'catFilter': S.ui.catFilter = el.dataset.c; renderPanel(true); break;
+        case 'gotoToday': S.ui.dayFilter = +el.dataset.d; renderPanel(true); renderMap(true); break;
+        case 'clAdd': clAdd(); break;
+        case 'clToggle': { const c = t.checklist[+el.dataset.i]; if (c) { c.done = !c.done; save(); renderPanel(true); } break; }
+        case 'clDel': { snapshot(); t.checklist.splice(+el.dataset.i, 1); save(); renderPanel(true); toast('已刪除', 4000, undoAct); break; }
+        case 'clTemplate': clTemplate(); break;
+        case 'clClearDone': snapshot(); t.checklist = t.checklist.filter((c) => !c.done); save(); renderPanel(true); toast('已清除勾選的項目', 4000, undoAct); break;
         case 'dismissBanner': S.data.flags.installDismissed = Date.now(); save({ silent: true }); renderPanel(true); break;
       }
     };
@@ -923,7 +1200,10 @@
     $('#tabBody').addEventListener('input', (e) => {
       if (e.target.id === 'placeSearch') { S.ui.search = e.target.value; S.ui.focusSearch = true; renderPanel(true); S.ui.focusSearch = false; }
     });
-    $('#tabBody').addEventListener('keydown', (e) => { if (e.target.id === 'addInput' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleAddInput(); });
+    $('#tabBody').addEventListener('keydown', (e) => {
+      if (e.target.id === 'addInput' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleAddInput();
+      if ((e.target.id === 'clInput' || e.target.id === 'clGroup') && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); clAdd(); }
+    });
   }
 
   function locate() {
@@ -977,7 +1257,7 @@
     loadData();
     initMap();
     bind();
-    if (window.innerWidth < 900) setSheet('half');
+    if (isMobile()) setSheet(S.data.flags.sheet || 'half');
     renderAll(true);
     handleIncoming();
     startSync();
@@ -992,7 +1272,9 @@
       }).catch(() => {});
     }
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
-    if (darkMQ && darkMQ.addEventListener) darkMQ.addEventListener('change', () => { if (settings().tiles === 'auto') setTiles(); });
+    if (darkMQ && darkMQ.addEventListener) darkMQ.addEventListener('change', () => { renderAll(); });
+    // 旅行中：預設只看今天
+    { const d = todayIndex(trip()); if (d) { S.ui.dayFilter = d; renderAll(true); } }
     window.addEventListener('online', () => { S.requested.clear(); scheduleRender(); });
     window.TripApp = { S, trip, renderAll, C, tripText: () => tripText(trip()), undo }; // 方便除錯與測試
   }

@@ -68,6 +68,12 @@ def handle(route):
             {'travelMode': 'TRANSIT', 'transitDetails': {'stopCount': 4, 'transitLine': {'nameShort': '銀座線', 'color': '#f39700', 'vehicle': {'type': 'SUBWAY'}}, 'stopDetails': {'departureStop': {'name': '淺草'}, 'arrivalStop': {'name': '上野'}}}},
             {'travelMode': 'WALK', 'staticDuration': '180s'}]}]}]}
         return route.fulfill(status=200, content_type='application/json', headers={'Access-Control-Allow-Origin': '*'}, body=json.dumps(body))
+    if 'api.open-meteo.com' in url:
+        calls['weather'] = calls.get('weather', 0) + 1
+        from urllib.parse import urlparse, parse_qs
+        d = parse_qs(urlparse(url).query).get('start_date', ['2026-01-01'])[0]
+        body = {'daily': {'time': [d], 'weather_code': [61], 'temperature_2m_max': [14.2], 'temperature_2m_min': [7.8], 'precipitation_probability_max': [70]}}
+        return route.fulfill(status=200, content_type='application/json', headers={'Access-Control-Allow-Origin': '*'}, body=json.dumps(body))
     if url.startswith(BASE):
         return route.continue_()
     return route.abort()
@@ -183,7 +189,9 @@ with sync_playwright() as p:
 
     # 7) 手動移動到別天 → 鎖定
     pid = page.evaluate('TripApp.C.dayStops(TripApp.trip(),2)[0].id')
+    page.click('[data-act=reorder]')
     page.select_option(f'select.daysel[data-id="{pid}"]', '1')
+    page.click('[data-act=reorder]')
     page.wait_for_timeout(200)
     check('手動移到 Day 1 並自動鎖定', page.evaluate(f'(()=>{{const p=TripApp.trip().places.find(x=>x.id=="{pid}");return p.day===1&&p.locked}})()'))
     page.click('[data-act=filter][data-d="0"]')
@@ -276,6 +284,88 @@ with sync_playwright() as p:
     sp.screenshot(path=f'{OUT}/17_text_itinerary.png')
     check('v1.1 頁面沒有錯誤（含 CSP 違規）', not serr, '; '.join(serr[:3]))
     sctx.close()
+
+    # 15) v1.3：分類圖示、打卡、營業時間、清單、主題、今天模式、天氣、面板拖曳
+    vctx = br.new_context(viewport={'width': 393, 'height': 852}, device_scale_factor=2, is_mobile=True, has_touch=True, locale='zh-TW')
+    vctx.route('**/*', handle)
+    vp = vctx.new_page(); verr = []
+    vp.on('pageerror', lambda e: verr.append(str(e)))
+    vp.on('console', lambda m: verr.append(m.text) if m.type == 'error' else None)
+    vp.goto(BASE); vp.wait_for_selector('.welcome', state='attached'); vp.click('[data-act=sample]'); vp.wait_for_timeout(2000)
+    cats = vp.evaluate('Object.fromEntries(TripApp.trip().places.map(p=>[p.name,p.cat]))')
+    check('分類自動判斷（淺草寺=寺廟、晴空塔=展望、築地=市場、teamLab=美術館）', cats['淺草寺'] == 'temple' and cats['東京晴空塔'] == 'view' and cats['築地場外市場'] == 'market' and cats['teamLab Planets'] == 'museum', str(cats)[:120])
+    check('地圖標記顯示分類圖示＋順序號碼', vp.locator('.pin use[href="#i-c_temple"]').count() >= 1 and vp.locator('.pin em').count() >= 10)
+    # 營業時間警告：把每天出門時間改到 05:00 → 淺草寺 06:00 才開
+    vp.fill('#dayStart', '04:30'); vp.dispatch_event('#dayStart', 'change'); vp.wait_for_timeout(300)
+    check('營業時間衝突警告（太早到）', vp.locator('.warnline').count() >= 1, vp.locator('.warnline').first.inner_text() if vp.locator('.warnline').count() else '')
+    vp.fill('#dayStart', '09:00'); vp.dispatch_event('#dayStart', 'change'); vp.wait_for_timeout(200)
+    check('預估總花費顯示', '預估總花費 ¥' in vp.inner_text('#tabBody'))
+    first = vp.evaluate('TripApp.C.dayStops(TripApp.trip(),1)[0].id')
+    vp.click(f'.stop[data-id="{first}"] [data-act=toggleDone]'); vp.wait_for_timeout(200)
+    check('打卡：標記已去過、地圖標記變灰', vp.evaluate(f'TripApp.trip().places.find(p=>p.id=="{first}").done') and vp.locator('.pin.done').count() == 1)
+    vp.screenshot(path=f'{OUT}/19_categories_done.png')
+    # 編輯分類
+    vp.click(f'.stop[data-id="{first}"] [data-act=edit]'); vp.click('.catopt[data-cat=food]'); vp.click('[data-mact=ok]'); vp.wait_for_timeout(150)
+    check('編輯時可改分類', vp.evaluate(f'TripApp.trip().places.find(p=>p.id=="{first}").cat') == 'food')
+    # 地點分頁分類篩選
+    vp.click('#tabs button[data-tab=places]'); vp.click('[data-act=catFilter][data-c=temple]'); vp.wait_for_timeout(150)
+    n_t = vp.locator('#tabBody .stop').count()
+    check('地點分頁可依分類篩選', n_t == sum(1 for v in vp.evaluate('TripApp.trip().places.map(p=>p.cat)') if v == 'temple') and n_t >= 1, f'{n_t} 個')
+    vp.screenshot(path=f'{OUT}/20_places_filter.png')
+    # 清單
+    vp.click('#tabs button[data-tab=list]'); vp.click('[data-act=clTemplate]'); vp.wait_for_timeout(150)
+    nCl = vp.evaluate('TripApp.trip().checklist.length')
+    vp.fill('#clInput', '日幣零錢包'); vp.fill('#clGroup', '金錢'); vp.press('#clInput', 'Enter'); vp.wait_for_timeout(150)
+    vp.locator('[data-act=clToggle]').first.click(); vp.wait_for_timeout(100)
+    check('行前清單：載入範本、新增、勾選', nCl >= 15 and vp.evaluate('TripApp.trip().checklist.length') == nCl + 1 and vp.evaluate('TripApp.trip().checklist[0].done'))
+    vp.screenshot(path=f'{OUT}/21_checklist.png')
+    # 主題切換（每趟旅程）
+    vp.click('#btnSettings'); vp.click('.themeopt[data-theme=neon]'); vp.wait_for_timeout(150)
+    check('主題預覽即時套用', vp.evaluate('document.documentElement.dataset.theme') == 'neon')
+    vp.screenshot(path=f'{OUT}/22_theme_picker.png')
+    vp.click('[data-mact=ok]'); vp.wait_for_timeout(200)
+    vp.click('#tabs button[data-tab=plan]'); vp.wait_for_timeout(300)
+    vp.screenshot(path=f'{OUT}/23_theme_neon.png')
+    # 另一趟旅程用不同主題
+    vp.evaluate("(()=>{})()")
+    vp.select_option('#tripSelect', index=0); vp.wait_for_timeout(200)
+    check('切換到另一趟旅程 → 主題回到該旅程設定', vp.evaluate('document.documentElement.dataset.theme') in ('parchment', 'relic'))
+    vp.select_option('#tripSelect', index=1); vp.wait_for_timeout(200)
+    check('切回範例旅程 → 霓虹主題', vp.evaluate('document.documentElement.dataset.theme') == 'neon')
+    for th in ['washi', 'tide', 'relic']:
+        vp.click('#btnSettings'); vp.click(f'.themeopt[data-theme={th}]'); vp.click('[data-mact=ok]'); vp.wait_for_timeout(250)
+        vp.screenshot(path=f'{OUT}/24_theme_{th}.png')
+    # 今天模式＋天氣：出發日設成今天
+    import datetime
+    today = datetime.datetime.now().strftime('%Y-%m-%d')
+    vp.fill('#startDate', today); vp.dispatch_event('#startDate', 'change'); vp.wait_for_timeout(400)
+    vp.reload(); vp.wait_for_selector('#tabBody'); vp.wait_for_timeout(1500)
+    body = vp.inner_text('#tabBody')
+    check('今天模式：顯示「今天是 DAY 01」與下一站', '今天是 DAY 01' in body and '下一站' in body)
+    check('今天模式：自動只看今天', vp.evaluate('TripApp.S.ui.dayFilter') == 1)
+    check('天氣：顯示預報（Open-Meteo）', vp.locator('.wx').count() >= 1 and '8°/14°' in vp.inner_text('.wx'), vp.inner_text('.wx') if vp.locator('.wx').count() else '')
+    vp.screenshot(path=f'{OUT}/25_today_weather.png')
+    # 面板拖曳
+    h0 = vp.evaluate("document.querySelector('#panel').getBoundingClientRect().height")
+    hb = vp.locator('#sheetHandle').bounding_box()
+    x, y = hb['x'] + hb['width'] / 2, hb['y'] + hb['height'] / 2
+    vp.mouse.move(x, y); vp.mouse.down()
+    for k in range(1, 11): vp.mouse.move(x, y + 30 * k); vp.wait_for_timeout(16)
+    vp.mouse.up(); vp.wait_for_timeout(500)
+    h1 = vp.evaluate("document.querySelector('#panel').getBoundingClientRect().height")
+    check('面板往下拖 → 變矮（地圖變大）', h1 < h0 - 100, f'{h0:.0f}px → {h1:.0f}px')
+    vp.screenshot(path=f'{OUT}/26_sheet_dragged.png')
+    hb = vp.locator('#sheetHandle').bounding_box(); x, y = hb['x'] + hb['width'] / 2, hb['y'] + hb['height'] / 2
+    vp.mouse.move(x, y); vp.mouse.down()
+    for k in range(1, 16): vp.mouse.move(x, y - 40 * k); vp.wait_for_timeout(16)
+    vp.mouse.up(); vp.wait_for_timeout(500)
+    h2 = vp.evaluate("document.querySelector('#panel').getBoundingClientRect().height")
+    check('面板往上拖 → 變高', h2 > h1 + 200, f'{h1:.0f}px → {h2:.0f}px')
+    vp.reload(); vp.wait_for_selector('#tabBody'); vp.wait_for_timeout(600)
+    h3 = vp.evaluate("document.querySelector('#panel').getBoundingClientRect().height")
+    check('重新整理後記住面板高度', abs(h3 - h2) < 30, f'{h3:.0f}px')
+    check('v1.3 頁面沒有錯誤', not verr, '; '.join(verr[:3]))
+    vctx.close()
 
     # 14) 桌機版面
     dctx = br.new_context(viewport={'width': 1366, 'height': 800}, locale='zh-TW')

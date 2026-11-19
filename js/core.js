@@ -242,12 +242,96 @@
     throw new Error('不支援的檔案格式（支援 .csv / .json / .geojson / .kml）');
   }
 
+  /* ---------- 地點分類 ---------- */
+  const CATS = {
+    food: { label: '餐廳', emoji: '🍜' }, cafe: { label: '咖啡甜點', emoji: '☕' }, bar: { label: '酒吧夜生活', emoji: '🍸' },
+    station: { label: '車站', emoji: '🚉' }, airport: { label: '機場', emoji: '✈️' }, hotel: { label: '住宿', emoji: '🏨' },
+    shopping: { label: '百貨購物', emoji: '🛍️' }, market: { label: '市場商店街', emoji: '🏮' }, museum: { label: '美術館博物館', emoji: '🏛️' },
+    temple: { label: '寺廟神社', emoji: '⛩️' }, castle: { label: '城堡古蹟', emoji: '🏯' }, park: { label: '公園自然', emoji: '🌳' },
+    beach: { label: '海灘', emoji: '🏖️' }, view: { label: '展望夜景', emoji: '🗼' }, theme: { label: '樂園', emoji: '🎡' },
+    zoo: { label: '動物園水族館', emoji: '🐾' }, onsen: { label: '溫泉', emoji: '♨️' }, landmark: { label: '地標景點', emoji: '📍' },
+    other: { label: '其他', emoji: '📌' },
+  };
+  const CAT_RULES = [
+    ['airport', /機場|空港|airport/i],
+    ['hotel', /飯店|酒店|旅館|旅店|民宿|ホテル|旅籠|hotel|hostel|\binn\b|resort|ryokan|住宿/i],
+    ['theme', /樂園|楽園|遊樂|游樂|disney|universal|usj|legoland|theme ?park|ジブリパーク/i],
+    ['zoo', /動物園|水族館|aquarium|\bzoo\b|safari/i],
+    ['museum', /美術館|博物館|museum|gallery|ギャラリー|藝廊|紀念館|記念館|teamlab|美術|展覧|exhibition/i],
+    ['castle', /城$|城堡|城跡|castle|palace|宮殿|遺跡|古蹟|ruins|fort/i],
+    ['temple', /寺|神社|神宮|大社|天滿宮|天満宮|稲荷|稻荷|廟|宮$|shrine|temple|church|cathedral|basilica|mosque|教堂|聖堂|chapel/i],
+    ['onsen', /溫泉|温泉|onsen|錢湯|銭湯|hot ?spring|spa\b/i],
+    ['beach', /海灘|海水浴|沙灘|beach|ビーチ/i],
+    ['view', /展望|夜景|觀景|観景|tower|タワー|塔$|塔\b|鐵塔|晴空塔|sky\b|スカイ|observatory|viewpoint|觀景台/i],
+    ['station', /車站|[^網]站$|駅|station|地鐵|地下鉄|metro\b|\bmrt\b|\bjr\b/i],
+    ['market', /市場|夜市|横丁|橫丁|商店街|market|bazaar|朝市/i],
+    ['cafe', /咖啡|カフェ|珈琲|喫茶|cafe|café|coffee|甜點|甜品|スイーツ|bakery|麵包|パン屋|starbucks|星巴克|dessert|パフェ|抹茶/i],
+    ['bar', /酒吧|居酒屋|izakaya|\bbar\b|pub\b|夜店|club\b|ゴールデン街|bistro bar|酒場|brewery/i],
+    ['food', /餐|食堂|料理|拉麵|ラーメン|ramen|壽司|寿司|sushi|燒肉|焼肉|烤肉|丼|うどん|烏龍|蕎麥|そば|天婦羅|天ぷら|串|鍋|牛排|steak|burger|pizza|restaurant|kitchen|diner|bistro|一蘭|吉野家|すき家|燒|焼き|小籠包|火鍋|飯$|麵$|麺|カレー|咖哩|食べ|美食|grill|trattoria|ramen/i],
+    ['shopping', /百貨|三越|伊勢丹|高島屋|大丸|阪急|阪神|outlet|mall|shopping|購物|商場|ドン・?キホーテ|唐吉訶德|驚安|ビック|bic ?camera|yodobashi|uniqlo|表參道|表参道|竹下通|心齋橋|心斎橋|商圈|store\b|shop\b|parco|lumine|loft|無印|ginza six|銀座|秋葉原|akihabara/i],
+    ['park', /公園|庭園|園$|森林|竹林|山$|岳$|瀑布|滝|湖$|峽谷|峡谷|花園|植物園|park|garden|forest|lake|falls|valley|mountain|trail|步道/i],
+    ['landmark', /十字路口|crossing|門$|橋$|bridge|廣場|広場|square|street|大道|通り|老街|街$|地標|landmark|monument|雕像|statue|鳥居/i],
+  ];
+  function guessCat(name, extra) {
+    const n = String(name || '').trim();
+    for (const [k, re] of CAT_RULES) if (re.test(n)) return k;
+    return 'other';
+  }
+  const GTYPE = [
+    [/airport/, 'airport'], [/lodging|hotel|hostel|motel|resort|bed_and_breakfast/, 'hotel'],
+    [/amusement_park|theme_park|water_park/, 'theme'], [/zoo|aquarium/, 'zoo'], [/museum|art_gallery|cultural_center/, 'museum'],
+    [/castle|historical/, 'castle'], [/place_of_worship|temple|church|mosque|synagogue|shrine/, 'temple'],
+    [/spa|hot_spring|sauna/, 'onsen'], [/beach/, 'beach'], [/observation_deck|scenic/, 'view'],
+    [/train_station|subway_station|transit_station|bus_station|light_rail|railway/, 'station'],
+    [/market/, 'market'], [/cafe|coffee|bakery|dessert|tea_house|ice_cream|confectionery/, 'cafe'],
+    [/bar|night_club|pub|wine|brewery/, 'bar'], [/restaurant|food|meal|diner/, 'food'],
+    [/department_store|shopping_mall|store|shop|outlet/, 'shopping'], [/park|garden|hiking|national_park|campground/, 'park'],
+    [/station|halt|platform/, 'station'], [/attraction|viewpoint/, 'landmark'],
+    [/tourist_attraction|landmark|monument|plaza/, 'landmark'],
+  ];
+  function catFromGoogleType(type) {
+    if (!type) return '';
+    for (const [re, k] of GTYPE) if (re.test(type)) return k;
+    return '';
+  }
+
+  /* ---------- 營業時間 ---------- */
+  /** "10:00-18:00" 或 "10:00–18:00, 19:00-22:00" → [[600,1080],...]；跨夜 "18:00-02:00" → [1080, 1560] */
+  function parseHours(str) {
+    if (!str) return null;
+    const out = [];
+    const re = /(\d{1,2})[:：](\d{2})\s*[-–~〜至到]\s*(\d{1,2})[:：](\d{2})/g;
+    let m;
+    while ((m = re.exec(String(str)))) {
+      const a = +m[1] * 60 + +m[2]; let b = +m[3] * 60 + +m[4];
+      if (b <= a) b += 1440;
+      out.push([a, b]);
+    }
+    return out.length ? out : null;
+  }
+  /** 回傳 null（沒問題）或警告字串 */
+  function hoursWarning(hoursStr, arrive, depart) {
+    const h = parseHours(hoursStr);
+    if (!h) return null;
+    const inside = h.some(([a, b]) => arrive >= a && depart <= b);
+    if (inside) return null;
+    const open = h.some(([a, b]) => arrive < b && depart > a);
+    if (!open) {
+      const first = h.find(([a]) => a > arrive);
+      return first ? '抵達時還沒開（' + hm(first[0]) + ' 開）' : '抵達時已經關門';
+    }
+    const cur = h.find(([a, b]) => arrive < b && depart > a);
+    if (arrive < cur[0]) return '早到 ' + Math.round(cur[0] - arrive) + ' 分（' + hm(cur[0]) + ' 開）';
+    return '離開前已關門（' + hm(cur[1]) + ' 關）';
+  }
+
   /* ---------- 行程資料 ---------- */
   const PALETTE = ['#b0533b', '#3f6e78', '#6b7a35', '#7d4f7a', '#b4862f', '#9a4558', '#3c5a86', '#5f7f68', '#8a6a4b', '#6e6a5c'];
+  const THEMES = ['auto', 'parchment', 'relic', 'neon', 'washi', 'tide'];
   const dayColor = (d) => (d > 0 ? PALETTE[(d - 1) % PALETTE.length] : '#8a8370');
 
   function newTrip(name) {
-    return { id: uid(), name: name || '我的旅程', days: 3, startDate: '', dayStart: '09:00', base: null, places: [], legModes: {}, updatedAt: Date.now() };
+    return { id: uid(), name: name || '我的旅程', days: 3, startDate: '', dayStart: '09:00', theme: 'auto', currency: '', base: null, places: [], legModes: {}, checklist: [], updatedAt: Date.now() };
   }
 
   function sanitizePlace(p) {
@@ -261,6 +345,8 @@
       day: Number.isInteger(p.day) && p.day >= 0 && p.day <= 60 ? p.day : 0,
       order: Number.isFinite(+p.order) ? +p.order : 0,
       locked: !!p.locked, stay: Number.isFinite(+p.stay) ? Math.max(0, Math.min(1440, +p.stay)) : 60,
+      cat: CATS[p.cat] ? p.cat : guessCat(p.name, p.address),
+      done: !!p.done, hours: s(p.hours, 60), cost: Number.isFinite(+p.cost) && +p.cost > 0 ? Math.min(1e9, +p.cost) : 0,
     };
   }
   function sanitizeTrip(t) {
@@ -277,6 +363,10 @@
     if (t.legModes && typeof t.legModes === 'object') {
       for (const [k, v] of Object.entries(t.legModes)) if (MODES[v]) out.legModes[String(k).slice(0, 90)] = v;
     }
+    out.theme = THEMES.includes(t.theme) ? t.theme : 'auto';
+    out.currency = String(t.currency || '').replace(/[^A-Za-z$¥€£₩NT]/g, '').slice(0, 5);
+    out.checklist = (Array.isArray(t.checklist) ? t.checklist : []).filter((c) => c && typeof c.t === 'string').slice(0, 300)
+      .map((c) => ({ t: c.t.slice(0, 200), done: !!c.done, g: String(c.g || '').slice(0, 30) }));
     out.updatedAt = +t.updatedAt || Date.now();
     return out;
   }
@@ -595,7 +685,9 @@
     return {
       n: t.name, d: t.days, s: t.startDate || undefined, h: t.dayStart && t.dayStart !== '09:00' ? t.dayStart : undefined,
       b: t.base ? [t.base.name, +t.base.lat.toFixed(6), +t.base.lng.toFixed(6)] : undefined,
-      p: t.places.map((p) => [p.name, +p.lat.toFixed(6), +p.lng.toFixed(6), p.day, p.order, p.note || 0, p.locked ? 1 : 0, p.stay === 60 ? 0 : p.stay, p.url && p.url.length < 300 ? p.url : 0]),
+      p: t.places.map((p) => [p.name, +p.lat.toFixed(6), +p.lng.toFixed(6), p.day, p.order, p.note || 0, p.locked ? 1 : 0, p.stay === 60 ? 0 : p.stay, p.url && p.url.length < 300 ? p.url : 0, p.cat || 0, p.hours || 0, p.cost || 0, p.done ? 1 : 0]),
+      th: t.theme && t.theme !== 'auto' ? t.theme : undefined, cu: t.currency || undefined,
+      cl: t.checklist && t.checklist.length ? t.checklist.map((c) => [c.t, c.done ? 1 : 0, c.g || 0]) : undefined,
       m: packModes(t),
     };
   }
@@ -611,13 +703,14 @@
   }
   function unpackTrip(o) {
     const t = newTrip(o.n);
-    t.days = o.d; t.startDate = o.s || ''; t.dayStart = o.h || '09:00';
+    t.days = o.d; t.startDate = o.s || ''; t.dayStart = o.h || '09:00'; t.theme = o.th || 'auto'; t.currency = o.cu || '';
+    t.checklist = (o.cl || []).map((c) => ({ t: c[0], done: !!c[1], g: c[2] || '' }));
     if (o.b) t.base = { name: o.b[0], lat: o.b[1], lng: o.b[2] };
     const idMap = [];
     t.places = (o.p || []).map((a, i) => {
       const id = 'p' + i.toString(36);
       idMap.push(id);
-      return { id, name: a[0], lat: a[1], lng: a[2], day: a[3], order: a[4], note: a[5] || '', locked: !!a[6], stay: a[7] || 60, url: a[8] || '' };
+      return { id, name: a[0], lat: a[1], lng: a[2], day: a[3], order: a[4], note: a[5] || '', locked: !!a[6], stay: a[7] || 60, url: a[8] || '', cat: a[9] || '', hours: a[10] || '', cost: a[11] || 0, done: !!a[12] };
     });
     t.legModes = {};
     for (const [k, v] of Object.entries(o.m || {})) {
@@ -632,6 +725,6 @@
     parseGeoJSON, parseTakeoutCSV, parseKML, newTrip, sanitizeTrip, sanitizePlace, mergePlaces,
     MODES, estimateLeg, suggestMode, gmapsDirUrl, gmapsPlaceUrl, gmapsDayUrl, timeline, hm, toMin, centroid, balancedClusters,
     orderStops, planDays, pathLen, dayStops, legKey, parseOsrm, decodePolyline, parseGoogleRoute,
-    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE,
+    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES,
   };
 });

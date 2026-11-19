@@ -149,12 +149,13 @@
         if (opts.near) body.locationBias = { circle: { center: { latitude: opts.near.lat, longitude: opts.near.lng }, radius: 50000 } };
         const j = await googleQueue(() => fetchJSON('https://places.googleapis.com/v1/places:searchText', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': s.gkey, 'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.googleMapsUri' },
+          headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': s.gkey, 'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.googleMapsUri,places.primaryType,places.regularOpeningHours.weekdayDescriptions' },
           body: JSON.stringify(body),
         }));
         const list = (j && j.places || []).map((p) => ({
           name: p.displayName ? p.displayName.text : query, address: p.formattedAddress || '',
           lat: p.location.latitude, lng: p.location.longitude, url: p.googleMapsUri || '', source: 'google',
+          cat: C.catFromGoogleType(p.primaryType),
         }));
         if (list.length) return list;
       } catch (e) { if (!opts.silent) console.warn('Google 搜尋失敗，改用 OpenStreetMap', e); }
@@ -168,6 +169,7 @@
     return (j || []).map((r) => ({
       name: r.name || (r.display_name || '').split(',')[0], address: r.display_name || '',
       lat: parseFloat(r.lat), lng: parseFloat(r.lon), source: 'osm',
+      cat: C.catFromGoogleType(r.type) || C.catFromGoogleType(r.category) || '',
     }));
   }
 

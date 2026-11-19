@@ -229,3 +229,37 @@ test('分享往返保留每日出發時間', () => {
   assert.equal(C.unpackTrip(JSON.parse(JSON.stringify(C.packTrip(t)))).dayStart, '07:45');
   assert.equal(C.sanitizeTrip({ dayStart: '25:99' }).dayStart, '09:00');
 });
+
+test('分類自動判斷：中日英名稱', () => {
+  const cases = { '淺草寺': 'temple', '明治神宮': 'temple', '東京晴空塔': 'view', '上野公園': 'park', '阿美橫丁': 'market', '築地場外市場': 'market',
+    'teamLab Planets': 'museum', '國立西洋美術館': 'museum', '一蘭 拉麵 新宿店': 'food', '星巴克 京都二寧坂': 'cafe', '居酒屋 鳥貴族': 'bar',
+    '新宿站': 'station', '京都駅': 'station', 'Tokyo Station': 'station', '成田機場': 'airport', '伊勢丹新宿店': 'shopping', '大阪城': 'castle',
+    '環球影城 USJ': 'theme', '海遊館 水族館': 'zoo', '箱根湯本溫泉': 'onsen', '新宿站附近飯店': 'hotel', '台場': 'other' };
+  for (const [n, c] of Object.entries(cases)) assert.equal(C.guessCat(n), c, n);
+  assert.equal(C.catFromGoogleType('ramen_restaurant'), 'food');
+  assert.equal(C.catFromGoogleType('art_gallery'), 'museum');
+  assert.equal(C.catFromGoogleType('subway_station'), 'station');
+  assert.equal(C.catFromGoogleType('department_store'), 'shopping');
+});
+
+test('營業時間：太早、已關、離開前關門、跨夜', () => {
+  assert.match(C.hoursWarning('10:00-18:00', 540, 600), /還沒開/);
+  assert.equal(C.hoursWarning('10:00-18:00', 660, 720), null);
+  assert.match(C.hoursWarning('10:00-18:00', 1050, 1110), /離開前已關門/);
+  assert.match(C.hoursWarning('10:00-18:00', 1140, 1200), /已經關門/);
+  assert.equal(C.hoursWarning('18:00-02:00', 1380, 1470), null);
+  assert.match(C.hoursWarning('11:00-14:00, 17:00-22:00', 900, 960), /還沒開（17:00/);
+  assert.equal(C.hoursWarning('隨便寫', 0, 10), null);
+});
+
+test('新欄位：分類、打卡、營業時間、花費、主題、清單 往返與清理', () => {
+  const t = C.newTrip('x'); t.theme = 'washi'; t.currency = '¥';
+  t.checklist = [{ t: '護照', done: true, g: '證件' }];
+  t.places = [C.sanitizePlace({ name: '某地', lat: 35, lng: 139, cat: 'food', done: true, hours: '10:00-20:00', cost: 1200 })];
+  const b = C.unpackTrip(JSON.parse(JSON.stringify(C.packTrip(t))));
+  assert.equal(b.theme, 'washi'); assert.equal(b.currency, '¥');
+  assert.deepEqual(b.checklist, [{ t: '護照', done: true, g: '證件' }]);
+  assert.equal(b.places[0].cat, 'food'); assert.equal(b.places[0].done, true); assert.equal(b.places[0].hours, '10:00-20:00'); assert.equal(b.places[0].cost, 1200);
+  const z = C.sanitizeTrip({ theme: 'evil', places: [{ name: 'a', lat: 1, lng: 1, cat: 'xx', cost: -5 }] });
+  assert.equal(z.theme, 'auto'); assert.equal(z.places[0].cost, 0); assert.ok(C.CATS[z.places[0].cat]);
+});
