@@ -294,3 +294,20 @@ test('票價格式與 .ics 行事曆', () => {
   assert.ok(ics.split('\r\n').every((l) => new TextEncoder().encode(l).length <= 75), '每行不超過 75 bytes');
   assert.ok(ics.startsWith('BEGIN:VCALENDAR') && ics.trim().endsWith('END:VCALENDAR'));
 });
+
+test('每週營業時間：OSM 與 Google 格式、公休、依星期判斷', () => {
+  const w = C.parseOSMHours('Tu-Su 11:30-14:00,17:30-22:00');
+  assert.equal(w[1], 'off'); assert.equal(w[2], '11:30-14:00, 17:30-22:00');
+  assert.deepEqual(C.parseOSMHours('Mo-Fr 10:00-20:00; Sa,Su 11:00-18:00; We off'), ['11:00-18:00', '10:00-20:00', '10:00-20:00', 'off', '10:00-20:00', '10:00-20:00', '11:00-18:00']);
+  assert.equal(C.parseOSMHours('24/7')[3], '00:00-24:00');
+  assert.equal(C.parseOSMHours('sunrise-sunset'), null);
+  assert.equal(C.parseOSMHours('Fr-Mo 09:00-17:00')[0], '09:00-17:00');
+  assert.equal(C.parseOSMHours('Fr-Mo 09:00-17:00')[3], 'off');
+  const g = C.parseGoogleWeek(['Monday: 9:00 AM – 5:00 PM', 'Tuesday: Closed', 'Friday: 11:30 AM – 2:00 PM, 5:30 – 10:00 PM', '星期日: 24 小時營業']);
+  assert.equal(g[1], '09:00-17:00'); assert.equal(g[2], 'off'); assert.equal(g[5], '11:30-14:00, 17:30-22:00'); assert.equal(g[0], '00:00-24:00');
+  const p = { hours: '', hoursWeek: g };
+  assert.equal(C.hoursFor(p, '2026-12-22'), 'off'); // 2026-12-22 是星期二
+  assert.equal(C.hoursWarning(C.hoursFor(p, '2026-12-22'), 600, 660), '這天公休');
+  assert.equal(C.hoursFor({ hours: '10:00-12:00', hoursWeek: g }, '2026-12-22'), '10:00-12:00');
+  assert.match(C.weekSummary(C.parseOSMHours('Mo-Fr 10:00-20:00; Sa,Su 11:00-18:00')), /一–五 10:00-20:00；六、日 11:00-18:00/);
+});

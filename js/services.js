@@ -156,6 +156,7 @@
           name: p.displayName ? p.displayName.text : query, address: p.formattedAddress || '',
           lat: p.location.latitude, lng: p.location.longitude, url: p.googleMapsUri || '', source: 'google',
           cat: C.catFromGoogleType(p.primaryType),
+          hoursWeek: p.regularOpeningHours ? C.parseGoogleWeek(p.regularOpeningHours.weekdayDescriptions) : null,
         }));
         if (list.length) return list;
       } catch (e) { if (!opts.silent) console.warn('Google 搜尋失敗，改用 OpenStreetMap', e); }

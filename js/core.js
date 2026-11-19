@@ -311,6 +311,7 @@
   }
   /** 回傳 null（沒問題）或警告字串 */
   function hoursWarning(hoursStr, arrive, depart) {
+    if (hoursStr === 'off') return '這天公休';
     const h = parseHours(hoursStr);
     if (!h) return null;
     const inside = h.some(([a, b]) => arrive >= a && depart <= b);
@@ -323,6 +324,95 @@
     const cur = h.find(([a, b]) => arrive < b && depart > a);
     if (arrive < cur[0]) return '早到 ' + Math.round(cur[0] - arrive) + ' 分（' + hm(cur[0]) + ' 開）';
     return '離開前已關門（' + hm(cur[1]) + ' 關）';
+  }
+
+
+  /* ---------- 每週營業時間：week[0..6] = 日..六；'' 不知道、'off' 公休、'10:00-18:00, 19:00-22:00' ---------- */
+  const OSM_D = { Su: 0, Mo: 1, Tu: 2, We: 3, Th: 4, Fr: 5, Sa: 6 };
+  function osmDays(spec) {
+    const out = new Set();
+    for (const part of spec.split(',')) {
+      const m = part.trim().match(/^(Mo|Tu|We|Th|Fr|Sa|Su)(?:-(Mo|Tu|We|Th|Fr|Sa|Su))?$/);
+      if (!m) { if (part.trim() === 'PH') continue; return null; }
+      const a = OSM_D[m[1]], b = m[2] != null ? OSM_D[m[2]] : a;
+      // Mo=1..Su=0 的區間（例如 Fr-Mo 跨週）
+      const seq = [1, 2, 3, 4, 5, 6, 0];
+      let i = seq.indexOf(a); out.add(a);
+      while (seq[i] !== b) { i = (i + 1) % 7; out.add(seq[i]); }
+    }
+    return [...out];
+  }
+  function osmTimes(t) {
+    t = t.trim();
+    if (/^(off|closed)$/i.test(t)) return 'off';
+    const r = [];
+    for (const x of t.split(',')) {
+      const m = x.trim().match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\+?$/);
+      if (!m) return null;
+      r.push(m[1].padStart(2, '0') + ':' + m[2] + '-' + m[3].padStart(2, '0') + ':' + m[4]);
+    }
+    return r.join(', ');
+  }
+  function parseOSMHours(str) {
+    if (!str) return null;
+    str = String(str).trim();
+    if (str === '24/7') return Array(7).fill('00:00-24:00');
+    const week = Array(7).fill('');
+    let any = false, explicit = false;
+    for (const rule of str.split(';')) {
+      const r = rule.trim(); if (!r) continue;
+      let days = [0, 1, 2, 3, 4, 5, 6], times = r;
+      const m = r.match(/^((?:Mo|Tu|We|Th|Fr|Sa|Su|PH)(?:[-,](?:Mo|Tu|We|Th|Fr|Sa|Su|PH))*)\s+(.+)$/);
+      if (m) { days = osmDays(m[1]); times = m[2]; if (!days) continue; explicit = true; }
+      else if (/^(Mo|Tu|We|Th|Fr|Sa|Su)[-,A-Za-z]*$/.test(r)) continue;
+      const tv = osmTimes(times);
+      if (tv == null) continue;
+      days.forEach((d) => { week[d] = tv; }); any = true;
+    }
+    if (any && explicit) for (let d = 0; d < 7; d++) if (!week[d]) week[d] = 'off'; // OSM：沒列到的天＝公休
+    return any ? week : null;
+  }
+  const GDAY = [[/星期日|週日|周日|sunday/i, 0], [/星期一|週一|周一|monday/i, 1], [/星期二|週二|周二|tuesday/i, 2], [/星期三|週三|周三|wednesday/i, 3], [/星期四|週四|周四|thursday/i, 4], [/星期五|週五|周五|friday/i, 5], [/星期六|週六|周六|saturday/i, 6]];
+  function to24(h, m, ap) {
+    h = +h; m = m || '00';
+    if (ap) { ap = ap.toUpperCase(); if (/P|下午|晚上/.test(ap) && h < 12) h += 12; if (/A|上午|凌晨/.test(ap) && h === 12) h = 0; }
+    return String(h).padStart(2, '0') + ':' + m;
+  }
+  function parseGoogleWeek(lines) {
+    if (!Array.isArray(lines) || !lines.length) return null;
+    const week = Array(7).fill(''); let any = false;
+    for (const line of lines) {
+      const g = GDAY.find(([re]) => re.test(line)); if (!g) continue;
+      const body = line.slice(line.search(/[:：]/) + 1);
+      if (/休息|公休|closed|休業|定休/i.test(body)) { week[g[1]] = 'off'; any = true; continue; }
+      if (/24\s*(小時|hours)/i.test(body)) { week[g[1]] = '00:00-24:00'; any = true; continue; }
+      const re = /(上午|下午|晚上|凌晨)?\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM|上午|下午)?\s*[–\-~至到]\s*(上午|下午|晚上|凌晨)?\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM|上午|下午)?/gi;
+      const out = []; let m;
+      while ((m = re.exec(body))) {
+        const apA = m[4] || m[1] || (m[8] && !m[4] ? m[8] : ''), apB = m[8] || m[5] || '';
+        out.push(to24(m[2], m[3], apA) + '-' + to24(m[6], m[7], apB));
+      }
+      if (out.length) { week[g[1]] = out.join(', '); any = true; }
+    }
+    return any ? week : null;
+  }
+  /** 某天實際使用的營業時間：手動填的優先，否則用每週資料 */
+  function hoursFor(p, iso) {
+    if (p.hours) return p.hours;
+    if (!p.hoursWeek || !iso) return '';
+    const wd = new Date(iso + 'T12:00:00').getDay();
+    return p.hoursWeek[wd] || '';
+  }
+  const WD = '日一二三四五六';
+  function weekSummary(week) {
+    if (!week) return '';
+    const groups = [];
+    [1, 2, 3, 4, 5, 6, 0].forEach((d) => {
+      const v = week[d] || '?';
+      const last = groups[groups.length - 1];
+      if (last && last.v === v) last.d.push(d); else groups.push({ v, d: [d] });
+    });
+    return groups.map((g) => (g.d.length > 2 ? WD[g.d[0]] + '–' + WD[g.d[g.d.length - 1]] : g.d.map((x) => WD[x]).join('、')) + ' ' + (g.v === 'off' ? '公休' : g.v === '?' ? '不明' : g.v)).join('；');
   }
 
   /* ---------- 行程資料 ---------- */
@@ -346,7 +436,8 @@
       order: Number.isFinite(+p.order) ? +p.order : 0,
       locked: !!p.locked, stay: Number.isFinite(+p.stay) ? Math.max(0, Math.min(1440, +p.stay)) : 60,
       cat: CATS[p.cat] ? p.cat : guessCat(p.name, p.address),
-      done: !!p.done, hours: s(p.hours, 60), cost: Number.isFinite(+p.cost) && +p.cost > 0 ? Math.min(1e9, +p.cost) : 0,
+      done: !!p.done, hours: s(p.hours, 60),
+      hoursWeek: Array.isArray(p.hoursWeek) && p.hoursWeek.length === 7 ? p.hoursWeek.map((x) => s(x, 60)) : null, cost: Number.isFinite(+p.cost) && +p.cost > 0 ? Math.min(1e9, +p.cost) : 0,
     };
   }
   function sanitizeTrip(t) {
@@ -698,7 +789,7 @@
       const key = name + '@' + lat.toFixed(4) + ',' + lng.toFixed(4);
       if (seen.has(key)) continue; seen.add(key);
       const sub = [tg.cuisine && tg.cuisine.replace(/;/g, '、'), tg.brand && tg.brand !== name ? tg.brand : '', tg.opening_hours ? tg.opening_hours : ''].filter(Boolean).join(' · ');
-      out.push({ name, lat, lng, dist: haversine(origin, { lat, lng }), sub, hours: tg.opening_hours || '', cat: kind === 'sight' ? guessCat(name) === 'other' ? 'landmark' : guessCat(name) : k.cat || 'other' });
+      out.push({ name, lat, lng, dist: haversine(origin, { lat, lng }), sub, hours: tg.opening_hours || '', hoursWeek: parseOSMHours(tg.opening_hours), cat: kind === 'sight' ? guessCat(name) === 'other' ? 'landmark' : guessCat(name) : k.cat || 'other' });
     }
     return out.sort((a, b) => a.dist - b.dist).slice(0, 40);
   }
@@ -760,7 +851,7 @@
     return {
       n: t.name, d: t.days, s: t.startDate || undefined, h: t.dayStart && t.dayStart !== '09:00' ? t.dayStart : undefined,
       b: t.base ? [t.base.name, +t.base.lat.toFixed(6), +t.base.lng.toFixed(6)] : undefined,
-      p: t.places.map((p) => [p.name, +p.lat.toFixed(6), +p.lng.toFixed(6), p.day, p.order, p.note || 0, p.locked ? 1 : 0, p.stay === 60 ? 0 : p.stay, p.url && p.url.length < 300 ? p.url : 0, p.cat || 0, p.hours || 0, p.cost || 0, p.done ? 1 : 0]),
+      p: t.places.map((p) => [p.name, +p.lat.toFixed(6), +p.lng.toFixed(6), p.day, p.order, p.note || 0, p.locked ? 1 : 0, p.stay === 60 ? 0 : p.stay, p.url && p.url.length < 300 ? p.url : 0, p.cat || 0, p.hours || 0, p.cost || 0, p.done ? 1 : 0, p.hoursWeek || 0]),
       th: t.theme && t.theme !== 'auto' ? t.theme : undefined, cu: t.currency || undefined,
       cl: t.checklist && t.checklist.length ? t.checklist.map((c) => [c.t, c.done ? 1 : 0, c.g || 0]) : undefined,
       m: packModes(t),
@@ -785,7 +876,7 @@
     t.places = (o.p || []).map((a, i) => {
       const id = 'p' + i.toString(36);
       idMap.push(id);
-      return { id, name: a[0], lat: a[1], lng: a[2], day: a[3], order: a[4], note: a[5] || '', locked: !!a[6], stay: a[7] || 60, url: a[8] || '', cat: a[9] || '', hours: a[10] || '', cost: a[11] || 0, done: !!a[12] };
+      return { id, name: a[0], lat: a[1], lng: a[2], day: a[3], order: a[4], note: a[5] || '', locked: !!a[6], stay: a[7] || 60, url: a[8] || '', cat: a[9] || '', hours: a[10] || '', cost: a[11] || 0, done: !!a[12], hoursWeek: a[13] || null };
     });
     t.legModes = {};
     for (const [k, v] of Object.entries(o.m || {})) {
@@ -800,6 +891,6 @@
     parseGeoJSON, parseTakeoutCSV, parseKML, newTrip, sanitizeTrip, sanitizePlace, mergePlaces,
     MODES, estimateLeg, suggestMode, gmapsDirUrl, gmapsPlaceUrl, gmapsDayUrl, timeline, hm, toMin, centroid, balancedClusters,
     orderStops, planDays, pathLen, dayStops, legKey, parseOsrm, decodePolyline, parseGoogleRoute,
-    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS,
+    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary,
   };
 });

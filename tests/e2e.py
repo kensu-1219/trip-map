@@ -385,6 +385,7 @@ with sync_playwright() as p:
     vp.locator('[data-act=nearbyAdd]').first.click(); vp.wait_for_timeout(200)
     added = vp.evaluate('TripApp.trip().places[TripApp.trip().places.length-1]')
     check('附近結果一鍵加入（分類＝餐廳）', vp.evaluate('TripApp.trip().places.length') == before + 1 and added['cat'] == 'food', added['name'])
+    check('附近結果自動帶入每週營業時間', added.get('hoursWeek') and added['hoursWeek'][1] == '11:30-21:30')
     vp.screenshot(path=f'{OUT}/27_nearby.png')
     vp.click('#btnShare'); vp.wait_for_selector('[data-mact=ics]')
     with vp.expect_download() as dl:

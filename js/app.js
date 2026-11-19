@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.5.0';
+  const VERSION = '1.6.0';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -137,7 +137,8 @@
     const isBase = p.id === 'base';
     return '<div class="pop"><b>' + esc(p.name) + '</b>' +
       (isBase ? '<div class="muted">住宿（每天起終點）</div>' : '<div class="muted">' + (p.day ? 'Day ' + p.day + ' · 第 ' + (p.order + 1) + ' 站' : '尚未排入行程') + '</div>') +
-      (isBase ? '' : '<div class="muted">' + catIc(p.cat) + ' ' + C.CATS[p.cat].label + (p.hours ? ' · ' + I('clock') + ' ' + esc(p.hours) : '') + '</div>') +
+      (isBase ? '' : '<div class="muted">' + catIc(p.cat) + ' ' + C.CATS[p.cat].label + (p.hours ? ' · ' + I('clock') + ' ' + esc(p.hours) : '') + '</div>' +
+        (!p.hours && p.hoursWeek ? '<div class="muted small">' + I('clock') + ' ' + esc(C.weekSummary(p.hoursWeek)) + '</div>' : '')) +
       (p.note ? '<div class="note">' + esc(p.note) + '</div>' : '') +
       '<div class="pop-btns">' +
       (isBase ? '' : '<button class="btn sm" data-act="toggleDone" data-id="' + p.id + '">' + I(p.done ? 'done' : 'undone') + (p.done ? ' 已去過' : ' 打卡') + '</button>') +
@@ -298,7 +299,8 @@
 
   function stopRow(t, p, unassigned, i, n, tm) {
     const reorder = S.ui.reorder && !unassigned;
-    const warn = tm && p.hours ? C.hoursWarning(p.hours, tm.arrive, tm.depart) : null;
+    const hrs = C.hoursFor(p, dayISO(t, p.day));
+    const warn = tm && hrs ? C.hoursWarning(hrs, tm.arrive, tm.depart) : null;
     const cur = t.currency ? esc(t.currency) + ' ' : '';
     return '<div class="stop' + (p.done ? ' is-done' : '') + (reorder ? ' can-drag' : '') + '" data-id="' + p.id + '">' +
       (reorder ? '<span class="grip" title="按住拖曳排序">' + I('grip') + '</span>' : '') +
@@ -528,7 +530,7 @@
       const from = S.ui.me || prevDone || t.base;
       const mode = from ? (t.legModes[C.legKey(from, next)] || C.suggestMode(C.haversine(from, next))) : 'transit';
       h += '<div class="today-next"><span class="cat">' + catIc(next.cat) + '</span><span class="grow"><small class="muted">下一站</small><br><b>' + esc(next.name) + '</b>' +
-        (next.hours ? '<br><span class="muted">' + I('clock') + ' ' + esc(next.hours) + '</span>' : '') + '</span>' +
+        (C.hoursFor(next, dayISO(t, d)) ? '<br><span class="muted">' + I('clock') + ' ' + esc(C.hoursFor(next, dayISO(t, d)) === 'off' ? '今天公休' : C.hoursFor(next, dayISO(t, d))) + '</span>' : '') + '</span>' +
         (from ? '<a class="btn sm primary" target="_blank" rel="noopener" href="' + esc(C.gmapsDirUrl(from, next, mode)) + '">' + I('nav') + ' 導航</a>' : '') +
         '<button class="btn sm" data-act="toggleDone" data-id="' + next.id + '">' + I('done') + ' 打卡</button></div>';
     } else if (stops.length) h += '<div class="muted small">今天的行程都完成了，辛苦了！</div>';
@@ -582,7 +584,7 @@
       stops.forEach((p, i) => events.push({
         date: dayISO(t, d), start: tl.stops[i].arrive, end: tl.stops[i].depart, uid: t.id + '-' + p.id,
         title: 'D' + d + ' ' + C.CATS[p.cat].emoji + ' ' + p.name, location: p.address || p.name, lat: p.lat, lng: p.lng,
-        desc: [p.note, p.hours ? '營業時間 ' + p.hours : '', C.gmapsPlaceUrl(p)].filter(Boolean).join('\n'),
+        desc: [p.note, C.hoursFor(p, dayISO(t, d)) ? '營業時間 ' + C.hoursFor(p, dayISO(t, d)) : '', C.gmapsPlaceUrl(p)].filter(Boolean).join('\n'),
       }));
     }
     if (!events.length) { modalMsg('沒有可匯出的行程', '先把地點排進每一天（自動排行程）。'); return; }
@@ -833,7 +835,8 @@
       '<label class="lbl">名稱</label><input id="eName" value="' + esc(p.name) + '">' +
       '<label class="lbl">分類</label><div class="catpick" id="eCat">' + Object.entries(C.CATS).map(([k, c]) => '<button type="button" class="catopt' + (p.cat === k ? ' on' : '') + '" data-cat="' + k + '" title="' + c.label + '">' + catIc(k) + '<small>' + c.label + '</small></button>').join('') + '</div>' +
       '<label class="lbl">備註</label><textarea id="eNote" rows="3">' + esc(p.note) + '</textarea>' +
-      '<div class="row gap"><label class="field grow">' + I('clock') + ' 營業時間<input id="eHours" placeholder="10:00-18:00" value="' + esc(p.hours) + '"></label></div>' +
+      '<div class="row gap"><label class="field grow">' + I('clock') + ' 營業時間<input id="eHours" placeholder="' + (p.hoursWeek ? '留空＝用下方每週時間' : '10:00-18:00') + '" value="' + esc(p.hours) + '"></label></div>' +
+      (p.hoursWeek ? '<div class="muted small">每週：' + esc(C.weekSummary(p.hoursWeek)) + '（自動帶入；上面填了就以上面為準）</div>' : '') +
       '<div class="row gap" style="margin-top:8px"><label class="field grow">' + I('money') + ' 預估花費<input id="eCost" type="number" min="0" step="1" inputmode="decimal" value="' + (p.cost || '') + '" placeholder="0"></label><span class="muted">' + esc(t.currency || '') + '</span></div>' +
       '<div class="row gap"><label class="field">停留（分鐘）<input id="eStay" type="number" min="0" max="1440" step="15" value="' + p.stay + '"></label>' +
       '<label class="field">天數 <select id="eDay"><option value="0">未排</option>' + range(t.days).map((d) => '<option value="' + d + '"' + (p.day === d ? ' selected' : '') + '>Day ' + d + '</option>').join('') + '</select></label></div>' +
@@ -1291,7 +1294,7 @@
         case 'pickAdd': setPick('add'); break;
         case 'pickResult': {
           const r = S.ui.results.list[+el.dataset.i];
-          addPlaces([{ name: r.name, lat: r.lat, lng: r.lng, address: r.address, url: r.url || '', cat: r.cat || '' }]);
+          addPlaces([{ name: r.name, lat: r.lat, lng: r.lng, address: r.address, url: r.url || '', cat: r.cat || '', hoursWeek: r.hoursWeek || null }]);
           S.ui.results = null; S.ui.addMsg = ''; const ai = $('#addInput'); if (ai) ai.value = ''; renderPanel(); break;
         }
         case 'import': $('#fileInput').click(); break;
@@ -1309,7 +1312,7 @@
         case 'nearbyFrom': { const p = findPoint(t, id); if (p) { map.closePopup(); S.ui.nearby = { origin: { id: p.id, name: p.name, lat: p.lat, lng: p.lng }, kind: '', list: null }; switchTab('add'); } break; }
         case 'nearbyCenter': { const c = map.getCenter(); S.ui.nearby = { origin: { id: '', name: '地圖中心', lat: c.lat, lng: c.lng }, kind: '', list: null }; renderPanel(); break; }
         case 'nearbyKind': runNearby(el.dataset.k); break;
-        case 'nearbyAdd': { const r = S.ui.nearby.list[+el.dataset.i]; addPlaces([{ name: r.name, lat: r.lat, lng: r.lng, cat: r.cat, hours: /^\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}$/.test(r.hours) ? r.hours : '', note: r.sub }], { fit: false }); r.added = true; renderPanel(true); break; }
+        case 'nearbyAdd': { const r = S.ui.nearby.list[+el.dataset.i]; addPlaces([{ name: r.name, lat: r.lat, lng: r.lng, cat: r.cat, hoursWeek: r.hoursWeek || null, note: r.sub }], { fit: false }); r.added = true; renderPanel(true); break; }
         case 'nearbyClose': S.ui.nearby = null; nearbyLayer.clearLayers(); renderPanel(); break;
         case 'toggleDone': { const p = t.places.find((x) => x.id === id); if (p) { p.done = !p.done; save(); renderPanel(true); renderMap(false); if (p.done) toast('已打卡「' + p.name + '」', 4000, { label: '取消', fn: () => { p.done = false; save(); renderAll(); } }); } break; }
         case 'reorder': S.ui.reorder = !S.ui.reorder; renderPanel(true); break;
