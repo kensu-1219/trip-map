@@ -1,0 +1,5 @@
+{"type":"FeatureCollection","features":[
+{"geometry":{"coordinates":[135.7727,34.9671],"type":"Point"},"properties":{"date":"2024-03-01T00:00:00Z","google_maps_url":"http://maps.google.com/?cid=123","location":{"address":"京都府京都市伏見区","country_code":"JP","name":"伏見稻荷大社"}},"type":"Feature"},
+{"geometry":{"coordinates":[0,0],"type":"Point"},"properties":{"Title":"清水寺","Google Maps URL":"https://www.google.com/maps/place/x/@34.9949,135.785,17z/data=!3d34.9948561!4d135.7850463","Location":{"Address":"京都","Business Name":"清水寺","Geo Coordinates":{"Latitude":"34.9948561","Longitude":"135.7850463"}}},"type":"Feature"},
+{"geometry":{"coordinates":[0,0],"type":"Point"},"properties":{"google_maps_url":"http://maps.google.com/?cid=999","location":{"address":"京都市東山区祇園町","name":"祇園"}},"type":"Feature"}
+]}

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>京都</name>
+<Folder><Placemark><name>嵐山竹林</name><description><![CDATA[早上 8 點前<br>人少]]></description><Point><coordinates>135.6717,35.0170,0</coordinates></Point></Placemark>
+<Placemark><name>金閣寺 &amp; 庭園</name><Point><coordinates>
+135.7292,35.0394,0
+</coordinates></Point></Placemark>
+<Placemark><name>路線</name><LineString><coordinates>135.1,35.1,0 135.2,35.2,0</coordinates></LineString></Placemark>
+</Folder></Document></kml>
