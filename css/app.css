@@ -324,3 +324,7 @@ html[data-theme="neon"] .pin .ic, html[data-theme="neon"] .pin span { color: #10
 .day.collapsed .day-h { border-bottom: 0; }
 
 @media (max-width: 600px) { .updown { display: none !important; } }
+
+.help-row { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--hair); font-size: 14px; line-height: 1.5; }
+.help-row .cat { flex: none; color: var(--accent); } .help-row .cat .ic { width: 22px; height: 22px; }
+.help-row .muted { font-size: 13px; }

@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.7.0';
+  const VERSION = '1.7.1';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -649,6 +649,22 @@
     save(); renderPanel(true); toast(n ? '已加入 ' + n + ' 個常用項目' : '常用項目都已經在清單裡了');
   }
 
+  function helpModal() {
+    const row = (ic, title, body) => '<div class="help-row"><span class="cat">' + I(ic) + '</span><span class="grow"><b>' + title + '</b><br><span class="muted">' + body + '</span></span></div>';
+    openModal('<h3>使用說明</h3>' +
+      row('add', '加地點', '「新增」貼 Google Maps 連結（可多行）、搜尋地名、在地圖上點，或匯入 Google Takeout 的 .csv／.json、My Maps 的 .kml。') +
+      row('search', '找附近', '點地圖上的地點 →「附近」，找步行範圍的餐廳、咖啡、超商、車站、廁所、ATM。') +
+      row('auto', '排行程', '設天數、出發日、住宿 →「自動排行程」。換城市時，在每天最後一列按「今晚」設當晚住宿。') +
+      row('grip', '調整順序', '按「調整順序」後，按住 ⠿ 上下拖曳；用天數選單換到別天（會自動鎖定）。') +
+      row('transit', '交通方式', '每段路可切換步行／單車／開車／大眾運輸；「導航」直接開 Google Maps。') +
+      row('fit', '面板大小', '拖曳面板上方的橫條或分頁列，往下拉就能看大地圖；快速甩動也可以。') +
+      row('today', '旅行中', '設定出發日後，旅行當天會自動只看今天，顯示下一站、導航、打卡；營業時間不合會提醒。') +
+      row('share', '分享與備份', '「分享」產生連結、文字行程（貼 LINE）、加入行事曆、下載備份檔。') +
+      row('theme', '主題', '「設定」裡每趟旅程可選不同風格。') +
+      '<p class="muted small">資料存在這台裝置；iPhone 請「加入主畫面」並定期備份。版本 ' + VERSION + '</p>' +
+      '<div class="row end"><button class="btn primary" data-mact="close">知道了</button></div>');
+  }
+
   /* ---------- 歡迎畫面、範例、安裝提醒 ---------- */
   function welcomeHtml() {
     return '<div class="welcome"><svg class="art" viewBox="0 0 300 150" aria-hidden="true" fill="none" stroke="currentColor">' +
@@ -666,7 +682,8 @@
       '<li><span>到「新增」貼上 Google Maps 連結、搜尋地名，或匯入 Google 已儲存清單</span></li>' +
       '<li><span>設定天數和住宿，按「自動排行程」</span></li>' +
       '<li><span>每段路切換步行／單車／開車／大眾運輸看時間，按導航直接開 Google Maps</span></li></ol>' +
-      '<button class="btn accent block" data-act="sample">' + I('eye') + ' 先看範例：東京 3 天</button></div>';
+      '<button class="btn accent block" data-act="sample">' + I('eye') + ' 先看範例：東京 3 天</button>' +
+      '<button class="btn block" data-act="help">' + I('text') + ' 使用說明</button></div>';
   }
   function installBanner() {
     const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -1047,7 +1064,7 @@
       '<textarea id="sFb" rows="4" placeholder="把 Firebase 主控台的 const firebaseConfig = { … } 整段貼上">' + esc(s.fbConfig ? JSON.stringify(s.fbConfig, null, 1) : '') + '</textarea>' +
       '<div class="muted small" id="fbMsg">教學見 <a href="https://github.com/kensu-1219/trip-map#firebase-同步選填" target="_blank" rel="noopener">README</a>。</div><hr>' +
       '<label class="lbl">地圖樣式</label><select id="sTiles">' + [['auto', '自動（跟隨深色模式）'], ['osm', 'OpenStreetMap 標準（當地文字）'], ['carto', 'CARTO 清爽版'], ['dark', 'CARTO 深色']].map(([v, l]) => '<option value="' + v + '"' + (s.tiles === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>' +
-      '<div class="row gap wrap" style="margin-top:10px"><button class="btn sm" data-mact="clearCache">清除路線快取</button></div>' +
+      '<div class="row gap wrap" style="margin-top:10px"><button class="btn sm" data-mact="help">' + I('text') + ' 使用說明</button><button class="btn sm" data-mact="clearCache">清除路線快取</button></div>' +
       '<div class="muted small">版本 ' + VERSION + ' · 資料存在這台裝置的瀏覽器' + (t.synced ? '＋Firebase' : '') + '</div>' +
       '<div class="row gap end"><button class="btn" data-mact="close">取消</button><button class="btn primary" data-mact="ok">儲存</button></div>', {
       testKey: async () => {
@@ -1084,6 +1101,7 @@
           },
         });
       },
+      help: () => helpModal(),
       clearCache: () => { SV.clearRouteCache(); S.legs = {}; S.requested.clear(); toast('已清除'); renderAll(); },
     });
   }
@@ -1333,6 +1351,7 @@
         case 'measureTo': S.ui.measure.b = id; map.closePopup(); switchTab('measure'); break;
         case 'cancelPick': setPick(null); break;
         case 'sample': loadSample(); break;
+        case 'help': helpModal(); break;
         case 'nearbyFrom': { const p = findPoint(t, id); if (p) { map.closePopup(); S.ui.nearby = { origin: { id: p.id, name: p.name, lat: p.lat, lng: p.lng }, kind: '', list: null }; switchTab('add'); } break; }
         case 'nearbyCenter': { const c = map.getCenter(); S.ui.nearby = { origin: { id: '', name: '地圖中心', lat: c.lat, lng: c.lng }, kind: '', list: null }; renderPanel(); break; }
         case 'nearbyKind': runNearby(el.dataset.k); break;
