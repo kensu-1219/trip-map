@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14a3ad"/><stop offset="1" stop-color="#0b5f6b"/>
+    </linearGradient>
+    <linearGradient id="pin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff8a5c"/><stop offset="1" stop-color="#f0532e"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- 摺疊地圖 -->
+  <g transform="translate(96 150)">
+    <path d="M0 22 L106 0 L214 22 L320 0 L320 236 L214 258 L106 236 L0 258 Z" fill="#fdfaf3"/>
+    <path d="M106 0 L214 22 L214 258 L106 236 Z" fill="#efe8d8"/>
+    <path d="M0 22 L106 0 L106 236 L0 258 Z" fill="#f7f2e6"/>
+    <!-- 路線 -->
+    <path d="M34 214 C 70 170, 120 196, 150 150 S 230 110, 262 76" fill="none" stroke="#0b5f6b" stroke-width="12" stroke-linecap="round" stroke-dasharray="2 24"/>
+    <circle cx="34" cy="214" r="15" fill="#0b5f6b"/>
+    <circle cx="34" cy="214" r="6" fill="#fdfaf3"/>
+  </g>
+  <!-- 定位針 -->
+  <g transform="translate(358 96)">
+    <path d="M0 0 C -46 0 -74 34 -74 72 C -74 118 -22 160 0 196 C 22 160 74 118 74 72 C 74 34 46 0 0 0 Z" fill="url(#pin)"/>
+    <circle cx="0" cy="72" r="28" fill="#fdfaf3"/>
+  </g>
+</svg>

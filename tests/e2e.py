@@ -72,6 +72,15 @@ def handle(route):
         return route.continue_()
     return route.abort()
 
+def wait_js(pg, expr, timeout=15000):
+    """CSP 禁止 eval，所以不用 wait_for_function，改用 evaluate 輪詢"""
+    import time as _t
+    end = _t.time() + timeout / 1000
+    while _t.time() < end:
+        if pg.evaluate(expr): return True
+        pg.wait_for_timeout(150)
+    raise TimeoutError('wait_js timeout: ' + expr)
+
 results = []
 def check(name, cond, detail=''):
     results.append((name, bool(cond), detail))
@@ -120,7 +129,7 @@ with sync_playwright() as p:
 
     # 3) 匯入中文檔名 Takeout CSV（含沒有座標的 → 地名查詢）
     page.set_input_files('#fileInput', os.path.join(FIX, '想去的地點.csv'))
-    page.wait_for_function('TripApp.S.ui.geo && TripApp.S.ui.geo.done >= TripApp.S.ui.geo.total', timeout=15000)
+    wait_js(page, 'TripApp.S.ui.geo && TripApp.S.ui.geo.done >= TripApp.S.ui.geo.total', 15000)
     page.wait_for_timeout(300)
     places = page.evaluate('TripApp.trip().places.map(p=>p.name)')
     check('匯入「想去的地點.csv」：有座標直接加、晴空塔用地名查到', '東京晴空塔' in places and '築地場外市場' in places, f'{len(places)} 個')
@@ -227,7 +236,7 @@ with sync_playwright() as p:
     page.click('#btnSettings'); page.click('[data-mact=newTrip]'); page.fill('#askIn', '大檔測試'); page.click('[data-mact=ok]')
     import time; t0 = time.time()
     page.set_input_files('#fileInput', big)
-    page.wait_for_function('TripApp.trip().places.length >= 5000', timeout=30000)
+    wait_js(page, 'TripApp.trip().places.length >= 5000', 30000)
     dt = time.time() - t0
     check('大檔 5000 筆匯入', True, f'{dt:.1f} 秒（{os.path.getsize(big)//1024} KB）')
     t0 = time.time(); page.click('[data-act=autoplan]'); page.wait_for_timeout(200)
@@ -235,7 +244,40 @@ with sync_playwright() as p:
     check('5000 點自動排程不卡死', page.evaluate('TripApp.trip().places.every(p=>p.day>=1)'), f'{dt2:.1f} 秒')
     page.screenshot(path=f'{OUT}/12_big_file.png')
 
-    # 13) 桌機版面
+    # 13) v1.1：範例行程、時間表、文字行程、復原、CSP
+    sctx = br.new_context(viewport={'width': 393, 'height': 852}, device_scale_factor=2, is_mobile=True, has_touch=True, locale='zh-TW',
+                          user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1')
+    sctx.route('**/*', handle)
+    sp = sctx.new_page(); serr = []
+    sp.on('pageerror', lambda e: serr.append(str(e)))
+    sp.on('console', lambda m: serr.append(m.text) if m.type == 'error' else None)
+    sp.goto(BASE); sp.wait_for_selector('.welcome')
+    check('空白時顯示歡迎畫面與範例按鈕', sp.locator('[data-act=sample]').count() == 1)
+    check('iPhone Safari 未加主畫面 → 顯示提醒', sp.locator('.banner').count() == 1)
+    sp.screenshot(path=f'{OUT}/14_welcome.png')
+    sp.click('[data-act=sample]'); sp.wait_for_timeout(2500)
+    body = sp.inner_text('#tabBody')
+    check('範例行程：12 個地點排成 3 天', sp.evaluate('TripApp.trip().places.every(p=>p.day>=1)') and sp.evaluate('TripApp.trip().places.length') == 12)
+    check('時間表：顯示 09:00 出發與每站時間', '09:00 出發' in body and '回到住宿' in body and re.search(r'\d\d:\d\d–\d\d:\d\d', body) is not None)
+    check('整天導航連結含中途點', 'waypoints=' in (sp.locator('.day-tools a').first.get_attribute('href') or ''))
+    sp.fill('#dayStart', '08:00'); sp.dispatch_event('#dayStart', 'change'); sp.wait_for_timeout(300)
+    check('改每天出門時間 → 時間表跟著變', '08:00 出發' in sp.inner_text('#tabBody'))
+    sp.screenshot(path=f'{OUT}/15_sample_timeline.png')
+    txt = sp.evaluate('TripApp.tripText()')
+    check('文字行程含每天標題、時間、Google 連結', '【Day 1' in txt and '08:00 從住宿出發' in txt and 'google.com/maps' in txt, f'{len(txt)} 字')
+    before = sp.evaluate('TripApp.trip().places.length')
+    pid = sp.evaluate('TripApp.trip().places[0].id')
+    sp.click(f'.stop[data-id="{pid}"] [data-act=edit]'); sp.click('[data-mact=del]'); sp.wait_for_timeout(200)
+    check('刪除後出現「復原」按鈕', sp.locator('#toast button').count() == 1)
+    sp.screenshot(path=f'{OUT}/16_undo_toast.png')
+    sp.click('#toast button'); sp.wait_for_timeout(200)
+    check('按復原 → 地點回來', sp.evaluate('TripApp.trip().places.length') == before)
+    sp.click('#btnShare'); sp.click('[data-mact=text]'); sp.wait_for_selector('#txtOut')
+    sp.screenshot(path=f'{OUT}/17_text_itinerary.png')
+    check('v1.1 頁面沒有錯誤（含 CSP 違規）', not serr, '; '.join(serr[:3]))
+    sctx.close()
+
+    # 14) 桌機版面
     dctx = br.new_context(viewport={'width': 1366, 'height': 800}, locale='zh-TW')
     dctx.route('**/*', handle)
     dp = dctx.new_page(); dp.goto(link); dp.wait_for_selector('#modal:not([hidden])'); dp.click('[data-mact=ok]'); dp.wait_for_timeout(2000)

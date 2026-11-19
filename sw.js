@@ -1,10 +1,10 @@
 /* Service worker：程式離線可開、看過的地圖圖磚離線可看 */
-const VERSION = 'v1.0.0';
+const VERSION = 'v1.1.0';
 const SHELL = 'shell-' + VERSION;
 const TILES = 'tiles-v1';
 const MAX_TILES = 3000;
 const ASSETS = ['./', 'index.html', 'css/app.css', 'js/core.js', 'js/services.js', 'js/sync.js', 'js/app.js',
-  'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/apple-touch-icon.png'];
+  'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon.svg', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(SHELL).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));

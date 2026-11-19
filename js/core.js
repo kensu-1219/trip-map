@@ -243,11 +243,11 @@
   }
 
   /* ---------- 行程資料 ---------- */
-  const PALETTE = ['#e4572e', '#2e86ab', '#3bb273', '#9b5de5', '#f6a01a', '#e84393', '#17a2b8', '#6c757d', '#8d6e63', '#c0ca33'];
+  const PALETTE = ['#e8590c', '#1c7ed6', '#2f9e44', '#ae3ec9', '#e67700', '#d6336c', '#0c8599', '#5c7cfa', '#74b816', '#868e96'];
   const dayColor = (d) => (d > 0 ? PALETTE[(d - 1) % PALETTE.length] : '#888');
 
   function newTrip(name) {
-    return { id: uid(), name: name || '我的旅程', days: 3, startDate: '', base: null, places: [], legModes: {}, updatedAt: Date.now() };
+    return { id: uid(), name: name || '我的旅程', days: 3, startDate: '', dayStart: '09:00', base: null, places: [], legModes: {}, updatedAt: Date.now() };
   }
 
   function sanitizePlace(p) {
@@ -269,6 +269,8 @@
     if (t.id && /^[a-z0-9]{6,40}$/i.test(t.id)) out.id = t.id;
     out.days = Math.max(1, Math.min(60, parseInt(t.days, 10) || 3));
     out.startDate = /^\d{4}-\d{2}-\d{2}$/.test(t.startDate || '') ? t.startDate : '';
+    out.dayStart = /^([01]\d|2[0-3]):[0-5]\d$/.test(t.dayStart || '') ? t.dayStart : '09:00';
+    if (Number.isFinite(+t.lastBackup)) out.lastBackup = +t.lastBackup;
     out.base = t.base ? sanitizePlace({ ...t.base, id: 'base', day: 0 }) : null;
     out.places = (Array.isArray(t.places) ? t.places : []).map(sanitizePlace).filter(Boolean).slice(0, 5000);
     out.legModes = {};
@@ -323,6 +325,33 @@
     const m = MODES[mode] || MODES.transit;
     return 'https://www.google.com/maps/dir/?api=1&origin=' + a.lat + ',' + a.lng + '&destination=' + b.lat + ',' + b.lng + '&travelmode=' + m.gm;
   }
+  /** 整天路線一次開進 Google Maps（最多 9 個中途點） */
+  function gmapsDayUrl(seq, mode) {
+    if (seq.length < 2) return '';
+    const m = MODES[mode] || MODES.transit;
+    const ll = (p) => p.lat + ',' + p.lng;
+    const mid = seq.slice(1, -1).slice(0, 9).map(ll).join('|');
+    return 'https://www.google.com/maps/dir/?api=1&origin=' + ll(seq[0]) + '&destination=' + ll(seq[seq.length - 1]) +
+      (mid ? '&waypoints=' + encodeURIComponent(mid) : '') + '&travelmode=' + m.gm;
+  }
+  const hm = (min) => { min = Math.round(min); const h = Math.floor(min / 60) % 24, m = ((min % 60) + 60) % 60; return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0'); };
+  const toMin = (s) => { const m = /^(\d{1,2}):(\d{2})$/.exec(s || ''); return m ? +m[1] * 60 + +m[2] : 540; };
+  /**
+   * 時間表：legSecs 為每段移動秒數（有住宿時含頭尾兩段），stays 為每站停留分鐘。
+   * 回傳 [{arrive, depart}]（分鐘）與 end（回到住宿或最後離開）。
+   */
+  function timeline(startHHMM, legSecs, stays, hasBase) {
+    let t = toMin(startHHMM), li = 0;
+    const out = [];
+    for (let i = 0; i < stays.length; i++) {
+      if (hasBase || i > 0) t += (legSecs[li++] || 0) / 60;
+      const arrive = t; t += stays[i] || 0;
+      out.push({ arrive, depart: t });
+    }
+    if (hasBase && stays.length) t += (legSecs[li] || 0) / 60;
+    return { stops: out, end: t };
+  }
+
   function gmapsPlaceUrl(p) {
     if (p.url && /^https:\/\//.test(p.url)) return p.url;
     return 'https://www.google.com/maps/search/?api=1&query=' + p.lat + ',' + p.lng;
@@ -564,7 +593,7 @@
   /** 分享用精簡格式（縮短連結） */
   function packTrip(t) {
     return {
-      n: t.name, d: t.days, s: t.startDate || undefined,
+      n: t.name, d: t.days, s: t.startDate || undefined, h: t.dayStart && t.dayStart !== '09:00' ? t.dayStart : undefined,
       b: t.base ? [t.base.name, +t.base.lat.toFixed(6), +t.base.lng.toFixed(6)] : undefined,
       p: t.places.map((p) => [p.name, +p.lat.toFixed(6), +p.lng.toFixed(6), p.day, p.order, p.note || 0, p.locked ? 1 : 0, p.stay === 60 ? 0 : p.stay, p.url && p.url.length < 300 ? p.url : 0]),
       m: packModes(t),
@@ -582,7 +611,7 @@
   }
   function unpackTrip(o) {
     const t = newTrip(o.n);
-    t.days = o.d; t.startDate = o.s || '';
+    t.days = o.d; t.startDate = o.s || ''; t.dayStart = o.h || '09:00';
     if (o.b) t.base = { name: o.b[0], lat: o.b[1], lng: o.b[2] };
     const idMap = [];
     t.places = (o.p || []).map((a, i) => {
@@ -601,7 +630,7 @@
   return {
     haversine, validLatLng, uid, fmtDist, fmtDur, parseGoogleMapsUrl, parseCSV, parseImport,
     parseGeoJSON, parseTakeoutCSV, parseKML, newTrip, sanitizeTrip, sanitizePlace, mergePlaces,
-    MODES, estimateLeg, suggestMode, gmapsDirUrl, gmapsPlaceUrl, centroid, balancedClusters,
+    MODES, estimateLeg, suggestMode, gmapsDirUrl, gmapsPlaceUrl, gmapsDayUrl, timeline, hm, toMin, centroid, balancedClusters,
     orderStops, planDays, pathLen, dayStops, legKey, parseOsrm, decodePolyline, parseGoogleRoute,
     b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE,
   };

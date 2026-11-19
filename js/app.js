@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const C = window.TripCore, SV = window.TripServices, SY = window.TripSync, LS = SV.LS;
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -17,11 +17,12 @@
 
   function loadData() {
     const d = LS.get(STORE_KEY, null);
-    let data = { trips: [], current: '', settings: { gkey: '', fbConfig: null, tiles: 'osm' } };
+    let data = { trips: [], current: '', settings: { gkey: '', fbConfig: null, tiles: 'auto' }, flags: {} };
     if (d && Array.isArray(d.trips)) {
       data.settings = Object.assign(data.settings, d.settings || {});
       data.trips = d.trips.map((t) => { try { const s = C.sanitizeTrip(t); s.synced = !!t.synced; return s; } catch (e) { return null; } }).filter(Boolean);
       data.current = d.current;
+      data.flags = d.flags || {};
     }
     if (!data.trips.length) data.trips.push(C.newTrip('我的第一趟旅程'));
     if (!data.trips.find((t) => t.id === data.current)) data.current = data.trips[0].id;
@@ -47,7 +48,9 @@
   const TILES = {
     osm: { url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', attr: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', max: 19 },
     carto: { url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', attr: '&copy; OpenStreetMap &copy; CARTO', max: 20 },
+    dark: { url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', attr: '&copy; OpenStreetMap &copy; CARTO', max: 20 },
   };
+  const darkMQ = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   function initMap() {
     map = L.map('map', { zoomControl: false, worldCopyJump: true }).setView([25.04, 121.56], 4);
     L.control.zoom({ position: 'topright' }).addTo(map);
@@ -59,13 +62,17 @@
     map.on('click', onMapClick);
   }
   function setTiles() {
-    const t = TILES[settings().tiles] || TILES.osm;
+    let k = settings().tiles;
+    if (k === 'auto' || !TILES[k]) k = darkMQ && darkMQ.matches ? 'dark' : 'osm';
+    const t = TILES[k];
     if (tileLayer) map.removeLayer(tileLayer);
     tileLayer = L.tileLayer(t.url, { attribution: t.attr, maxZoom: t.max, subdomains: 'abcd', crossOrigin: true }).addTo(map);
   }
 
   function pinIcon(color, label, cls) {
-    return L.divIcon({ className: 'pin-wrap', html: '<div class="pin ' + (cls || '') + '" style="--c:' + color + '">' + esc(label) + '</div>', iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -14] });
+    const base = (cls || '').includes('base');
+    return L.divIcon({ className: 'pin-wrap', html: '<div class="pin ' + (cls || '') + '" style="--c:' + color + '"><span>' + esc(label) + '</span></div>',
+      iconSize: base ? [32, 32] : [30, 30], iconAnchor: base ? [16, 16] : [15, 37], popupAnchor: base ? [0, -16] : [0, -36] });
   }
 
   function renderMap(fit) {
@@ -216,12 +223,11 @@
     let h = '<div class="row wrap gap">' +
       '<label class="field">天數 <span class="stepper"><button data-act="days" data-d="-1">−</button><b>' + t.days + '</b><button data-act="days" data-d="1">＋</button></span></label>' +
       '<label class="field">出發日 <input type="date" id="startDate" value="' + esc(t.startDate) + '"></label>' +
-      '</div>' +
+      '<label class="field">每天 <input type="time" id="dayStart" value="' + esc(t.dayStart || '09:00') + '" step="900"> 出門</label>' +
+      '</div>' + installBanner() +
       '<div class="row gap base-row">🏨 <span class="grow">' + (t.base ? '<b>' + esc(t.base.name) + '</b> <span class="muted">每天從這裡出發、回來</span>' : '<span class="muted">未設定住宿（設定後每天會從住宿出發）</span>') + '</span><button class="btn sm" data-act="setBase">' + (t.base ? '更換' : '設定') + '</button></div>' +
       '<button class="btn primary block" data-act="autoplan"' + (t.places.length ? '' : ' disabled') + '>✨ 自動排行程（依遠近分成 ' + t.days + ' 天、排出最順路線）</button>';
-    if (!t.places.length) {
-      return h + '<div class="empty">還沒有地點。到「➕ 新增」貼上 Google Maps 連結、搜尋地名，或匯入 Google 已儲存清單。</div>';
-    }
+    if (!t.places.length) return h + welcomeHtml();
     h += '<div class="chips">' + '<button class="chip' + (f ? '' : ' on') + '" data-act="filter" data-d="0">全部</button>' +
       range(t.days).map((d) => '<button class="chip' + (f === d ? ' on' : '') + '" data-act="filter" data-d="' + d + '" style="--c:' + C.dayColor(d) + '">D' + d + '</button>').join('') + '</div>';
     const days = f ? [f] : range(t.days);
@@ -240,25 +246,33 @@
     let move = 0, dist = 0, est = false;
     const infos = legs.map(([a, b]) => { const li = legInfo(t, a, b); move += li.res.duration; dist += li.res.distance; est = est || li.res.estimated; return li; });
     const stay = stops.reduce((s, p) => s + (p.stay || 0) * 60, 0);
+    const tl = C.timeline(t.dayStart, infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), !!t.base);
+    const seq = t.base && stops.length ? [t.base].concat(stops, [t.base]) : stops;
+    const mainMode = mostCommonMode(infos);
     let h = '<div class="day" data-day="' + d + '"><div class="day-h" style="--c:' + C.dayColor(d) + '"><b>Day ' + d + '</b> <span>' + dayDate(t, d) + '</span>' +
-      '<span class="muted">' + stops.length + ' 站' + (stops.length ? ' · 移動 ' + (est ? '約 ' : '') + C.fmtDur(move) + ' · ' + C.fmtDist(dist) + ' · 停留 ' + C.fmtDur(stay) + ' · 共 ' + C.fmtDur(move + stay) : '') + '</span></div>';
+      (seq.length >= 2 ? '<span class="day-tools"><a class="btn sm ghost" target="_blank" rel="noopener" href="' + esc(C.gmapsDayUrl(seq, mainMode)) + '" title="整天路線在 Google Maps 開啟（最多 9 個中途點）">整天導航</a></span>' : '') +
+      '<span class="muted">' + stops.length + ' 站' + (stops.length ? ' · ' + C.hm(C.toMin(t.dayStart)) + '–' + C.hm(tl.end) + ' · 移動 ' + (est ? '約 ' : '') + C.fmtDur(move) + ' · ' + C.fmtDist(dist) + ' · 停留 ' + C.fmtDur(stay) : '') + '</span></div>';
     if (!stops.length) return h + '<div class="empty sm">這天沒有安排</div></div>';
     let li = 0;
-    if (t.base) h += baseRow(t.base) + legRow(t, infos[li++]);
+    if (t.base) h += baseRow(t.base, C.hm(C.toMin(t.dayStart)) + ' 出發') + legRow(t, infos[li++]);
     stops.forEach((p, i) => {
-      h += stopRow(t, p, false, i, stops.length);
+      h += stopRow(t, p, false, i, stops.length, tl.stops[i]);
       if (i < stops.length - 1 || t.base) h += legRow(t, infos[li++]);
     });
-    if (t.base) h += baseRow(t.base);
+    if (t.base) h += baseRow(t.base, C.hm(tl.end) + ' 回到住宿');
     return h + '</div>';
   }
-  const baseRow = (b) => '<div class="stop base"><span class="num" style="--c:#222">🏨</span><span class="grow">' + esc(b.name) + '</span></div>';
+  function mostCommonMode(infos) {
+    const c = {}; infos.forEach((i) => { c[i.mode] = (c[i.mode] || 0) + 1; });
+    return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || 'transit';
+  }
+  const baseRow = (b, time) => '<div class="stop base"><span class="num" style="--c:#1b2537">🏨</span><span class="grow">' + esc(b.name) + '</span>' + (time ? '<span class="time">' + time + '</span>' : '') + '</div>';
 
-  function stopRow(t, p, unassigned, i, n) {
+  function stopRow(t, p, unassigned, i, n, tm) {
     return '<div class="stop" data-id="' + p.id + '">' +
       '<span class="num" style="--c:' + C.dayColor(unassigned ? 0 : p.day) + '">' + (unassigned ? '•' : p.order + 1) + '</span>' +
       '<span class="grow"><a href="#" data-act="focus" data-id="' + p.id + '">' + esc(p.name) + '</a>' + (p.locked ? ' <span title="已鎖定在這天">🔒</span>' : '') +
-      '<br><span class="muted">停留 ' + C.fmtDur((p.stay || 0) * 60) + (p.note ? ' · ' + esc(p.note.slice(0, 40)) : '') + '</span></span>' +
+      '<br>' + (tm ? '<span class="time">' + C.hm(tm.arrive) + '–' + C.hm(tm.depart) + '</span> ' : '') + '<span class="muted">停留 ' + C.fmtDur((p.stay || 0) * 60) + (p.note ? ' · ' + esc(p.note.slice(0, 40)) : '') + '</span></span>' +
       (unassigned ? '' : '<button class="icon-btn sm" data-act="up" data-id="' + p.id + '"' + (i === 0 ? ' disabled' : '') + ' title="往前">↑</button>' +
         '<button class="icon-btn sm" data-act="down" data-id="' + p.id + '"' + (i === n - 1 ? ' disabled' : '') + ' title="往後">↓</button>') +
       '<select class="daysel" data-act="moveDay" data-id="' + p.id + '" title="移到哪一天"><option value="0"' + (p.day ? '' : ' selected') + '>未排</option>' +
@@ -362,6 +376,41 @@
       h += '<div class="empty">選兩個地點（或點地圖上的 📍 →「從這裡量」），會同時算出步行、單車、開車、大眾運輸的時間和距離。</div>';
     }
     return h;
+  }
+
+  /* ---------- 歡迎畫面、範例、安裝提醒 ---------- */
+  function welcomeHtml() {
+    return '<div class="welcome"><svg viewBox="0 0 220 120" aria-hidden="true"><path d="M20 22 L80 10 L140 22 L200 10 L200 98 L140 110 L80 98 L20 110 Z" fill="var(--card)" stroke="var(--line)" stroke-width="2"/>' +
+      '<path d="M80 10 L80 98 M140 22 L140 110" stroke="var(--line)" stroke-width="2"/>' +
+      '<path d="M40 90 C 60 70, 90 84, 110 62 S 150 40, 170 34" fill="none" stroke="var(--pri)" stroke-width="3" stroke-dasharray="2 8" stroke-linecap="round"/>' +
+      '<circle cx="40" cy="90" r="6" fill="var(--pri)"/><path d="M170 8 c-11 0 -18 8 -18 17 c0 11 12 21 18 29 c6 -8 18 -18 18 -29 c0 -9 -7 -17 -18 -17z" fill="var(--accent)"/><circle cx="170" cy="25" r="6" fill="#fff"/></svg>' +
+      '<h3>開始規劃你的旅程</h3><ol>' +
+      '<li>到「➕ 新增」貼上 Google Maps 連結、搜尋地名，或匯入 Google 已儲存清單</li>' +
+      '<li>設定天數和住宿，按「✨ 自動排行程」</li>' +
+      '<li>每段路切換 🚶🚲🚗🚇 看時間，按「導航」直接開 Google Maps</li></ol>' +
+      '<button class="btn accent block" data-act="sample">👀 先看範例：東京 3 天</button></div>';
+  }
+  function installBanner() {
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    const standalone = navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+    if (!ios || standalone) return '';
+    const f = S.data.flags.installDismissed;
+    if (f && Date.now() - f < 7 * 864e5) return '';
+    return '<div class="banner">📲<span>請按 Safari 的「分享 → <b>加入主畫面</b>」。沒加的話，iPhone 可能在一週沒使用後清掉資料。</span><button data-act="dismissBanner" aria-label="關閉">✕</button></div>';
+  }
+  function loadSample() {
+    const n = C.newTrip('範例：東京 3 天');
+    n.startDate = ''; n.days = 3;
+    n.base = C.sanitizePlace({ id: 'base', name: '新宿站附近飯店', lat: 35.6896, lng: 139.7006 });
+    const pts = [
+      ['淺草寺', 35.7148, 139.7967, '雷門拍照，早上人少'], ['東京晴空塔', 35.7101, 139.8107, '展望台建議先上網買票'], ['上野公園', 35.7156, 139.7745, ''], ['阿美橫丁', 35.7101, 139.7745, '小吃、藥妝'],
+      ['明治神宮', 35.6764, 139.6993, ''], ['原宿竹下通', 35.6716, 139.7031, ''], ['澀谷十字路口', 35.6595, 139.7005, 'SHIBUYA SKY 看夜景'], ['表參道', 35.6652, 139.7123, ''],
+      ['築地場外市場', 35.6655, 139.7707, '早餐吃海鮮'], ['teamLab Planets', 35.6491, 139.7898, '需預約'], ['台場', 35.6251, 139.7756, ''], ['東京鐵塔', 35.6586, 139.7454, ''],
+    ];
+    n.places = pts.map(([name, lat, lng, note]) => C.sanitizePlace({ name, lat, lng, note }));
+    n.places = C.planDays(n);
+    S.data.trips.push(n); S.data.current = n.id; save(); renderAll(true);
+    toast('已載入範例，可以隨意修改或在 ⚙️ 刪除');
   }
 
   /* ================= 動作 ================= */
@@ -468,6 +517,7 @@
   }
 
   function moveInDay(id, dir) {
+    snapshot();
     const t = trip();
     const p = t.places.find((x) => x.id === id);
     const stops = C.dayStops(t, p.day);
@@ -478,6 +528,7 @@
     save(); renderAll();
   }
   function moveToDay(id, d) {
+    snapshot();
     const t = trip();
     const p = t.places.find((x) => x.id === id);
     p.day = d; p.locked = d > 0;
@@ -485,15 +536,16 @@
     // 重新編號原本那天
     for (let k = 1; k <= t.days; k++) C.dayStops(t, k).forEach((s, i) => { s.order = i; });
     save(); renderAll();
-    if (d) toast('已移到 Day ' + d + '，並鎖定（自動排行程不會再移動它）');
+    if (d) toast('已移到 Day ' + d + ' 並鎖定 🔒', 5000, undoAct);
   }
 
   function autoplan() {
     const t = trip();
     const run = () => {
+      snapshot();
       t.places = C.planDays(t);
       save(); S.ui.dayFilter = 0; renderAll(true);
-      toast('✨ 已排成 ' + t.days + ' 天。可以用 ↑↓ 或天數選單微調，手動移動的會被鎖定。', 5000);
+      toast('✨ 已排成 ' + t.days + ' 天，手動移動的會被鎖定', 6000, undoAct);
     };
     if (t.places.some((p) => p.day)) {
       openModal('<h3>重新排行程？</h3><p>會重新安排所有<b>沒有鎖定🔒</b>的地點。鎖定的地點維持在原本那天。</p>' +
@@ -523,9 +575,10 @@
         closeModal(); save(); renderAll();
       },
       del: () => {
+        snapshot();
         t.places = t.places.filter((x) => x !== p);
         for (let k = 1; k <= t.days; k++) C.dayStops(t, k).forEach((s, i) => { s.order = i; });
-        closeModal(); save(); renderAll(); toast('已刪除「' + p.name + '」');
+        closeModal(); save(); renderAll(); toast('已刪除「' + p.name + '」', 6000, undoAct);
       },
     });
   }
@@ -562,7 +615,9 @@
     const kind = s[0], bytes = C.b64urlDecode(s.slice(1));
     if (kind === 'z') {
       const ds = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-      return new TextDecoder().decode(await new Response(ds).arrayBuffer());
+      const buf = await new Response(ds).arrayBuffer();
+      if (buf.byteLength > 5 * 1024 * 1024) throw new Error('too big');
+      return new TextDecoder().decode(buf);
     }
     return new TextDecoder().decode(bytes);
   }
@@ -585,7 +640,8 @@
       '<div class="row gap"><input readonly value="' + esc(link) + '" class="grow" id="shareLink"><button class="btn sm" data-mact="copy">複製</button>' + (navigator.share ? '<button class="btn sm" data-mact="native">分享…</button>' : '') + '</div>' +
       '<div class="muted small">連結長度 ' + link.length + ' 字元' + (link.length > 8000 ? '（很長，部分通訊軟體可能截斷，建議改用備份檔）' : '') + '</div>' +
       '<hr>' + syncPart + '<hr>' +
-      '<label class="lbl">備份檔</label><div class="row gap wrap"><button class="btn" data-mact="download">⬇️ 下載 .json 備份</button><button class="btn" data-mact="import">📂 匯入備份</button></div>' +
+      '<label class="lbl">文字行程（貼到 LINE／記事本）</label><button class="btn" data-mact="text">📝 產生文字行程</button><hr>' +
+      '<label class="lbl">備份檔 <span class="muted">' + (t.lastBackup ? '上次備份：' + new Date(t.lastBackup).toLocaleDateString('zh-TW') : '還沒備份過') + '</span></label><div class="row gap wrap"><button class="btn" data-mact="download">⬇️ 下載 .json 備份</button><button class="btn" data-mact="import">📂 匯入備份</button></div>' +
       '<div class="row end"><button class="btn" data-mact="close">關閉</button></div>', {
       copy: () => copyText(link),
       copyJoin: () => copyText($('#joinLink').value),
@@ -596,6 +652,13 @@
         a.href = URL.createObjectURL(blob); a.download = (t.name.replace(/[\\/:*?"<>|]/g, '_') || 'trip') + '.json';
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        t.lastBackup = Date.now(); save({ silent: true });
+      },
+      text: () => {
+        const txt = tripText(t);
+        openModal('<h3>📝 文字行程</h3><textarea class="textout" readonly id="txtOut">' + esc(txt) + '</textarea><div class="row gap end">' + (navigator.share ? '<button class="btn" data-mact="native">分享…</button>' : '') + '<button class="btn" data-mact="close">關閉</button><button class="btn primary" data-mact="copy">複製</button></div>', {
+          copy: () => copyText(txt), native: () => navigator.share({ title: t.name, text: txt }).catch(() => {}),
+        });
       },
       import: () => { closeModal(); $('#fileInput').click(); },
       enableSync: async () => {
@@ -604,6 +667,27 @@
       },
       disableSync: () => { t.synced = false; SY.stop(t.id); save({ silent: true }); updateBadge(); shareModal(); },
     });
+  }
+  function tripText(t) {
+    const lines = ['🗺️ ' + t.name + '（' + t.days + ' 天）'];
+    if (t.base) lines.push('🏨 住宿：' + t.base.name);
+    for (let d = 1; d <= t.days; d++) {
+      const stops = C.dayStops(t, d);
+      if (!stops.length) continue;
+      const infos = dayLegs(t, d).map(([a, b]) => legInfo(t, a, b));
+      const tl = C.timeline(t.dayStart, infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), !!t.base);
+      lines.push('', '【Day ' + d + (dayDate(t, d) ? ' ' + dayDate(t, d) : '') + '】');
+      let li = 0;
+      const legTxt = (x) => '   ↓ ' + C.MODES[x.mode].icon + ' ' + (x.res.estimated ? '約' : '') + C.fmtDur(x.res.duration) + '（' + C.fmtDist(x.res.distance) + '）';
+      if (t.base) { lines.push(C.hm(C.toMin(t.dayStart)) + ' 從住宿出發'); lines.push(legTxt(infos[li++])); }
+      stops.forEach((p, i) => {
+        lines.push(C.hm(tl.stops[i].arrive) + ' ' + p.name + (p.note ? '（' + p.note.replace(/\s+/g, ' ').slice(0, 60) + '）' : ''));
+        lines.push('   ' + C.gmapsPlaceUrl(p));
+        if (i < stops.length - 1 || t.base) lines.push(legTxt(infos[li++]));
+      });
+      if (t.base) lines.push(C.hm(tl.end) + ' 回到住宿');
+    }
+    return lines.join('\n');
   }
   function copyText(s) {
     (navigator.clipboard ? navigator.clipboard.writeText(s) : Promise.reject()).then(() => toast('已複製'), () => {
@@ -653,7 +737,7 @@
       '<label class="lbl">Firebase 設定（選填：多人即時同步）</label>' +
       '<textarea id="sFb" rows="4" placeholder="把 Firebase 主控台的 const firebaseConfig = { … } 整段貼上">' + esc(s.fbConfig ? JSON.stringify(s.fbConfig, null, 1) : '') + '</textarea>' +
       '<div class="muted small" id="fbMsg">教學見 <a href="https://github.com/kensu-1219/trip-map#firebase-同步選填" target="_blank" rel="noopener">README</a>。</div><hr>' +
-      '<label class="lbl">地圖樣式</label><select id="sTiles"><option value="osm"' + (s.tiles === 'osm' ? ' selected' : '') + '>OpenStreetMap 標準（當地文字）</option><option value="carto"' + (s.tiles === 'carto' ? ' selected' : '') + '>CARTO 清爽版</option></select>' +
+      '<label class="lbl">地圖樣式</label><select id="sTiles">' + [['auto', '自動（跟隨深色模式）'], ['osm', 'OpenStreetMap 標準（當地文字）'], ['carto', 'CARTO 清爽版'], ['dark', 'CARTO 深色']].map(([v, l]) => '<option value="' + v + '"' + (s.tiles === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>' +
       '<div class="row gap wrap" style="margin-top:10px"><button class="btn sm" data-mact="clearCache">清除路線快取</button></div>' +
       '<div class="muted small">版本 ' + VERSION + ' · 資料存在這台裝置的瀏覽器' + (t.synced ? '＋Firebase' : '') + '</div>' +
       '<div class="row gap end"><button class="btn" data-mact="close">取消</button><button class="btn primary" data-mact="ok">儲存</button></div>', {
@@ -710,10 +794,32 @@
     const i = $('#askIn'); if (i) { i.focus(); i.select(); i.addEventListener('keydown', (e) => { if (e.key === 'Enter') modalActs.ok(); }); }
   }
   let toastT = null;
-  function toast(msg, ms) {
+  function toast(msg, ms, action) {
     const el = $('#toast'); el.textContent = msg; el.hidden = false;
-    clearTimeout(toastT); toastT = setTimeout(() => { el.hidden = true; }, ms || 2600);
+    el.classList.toggle('has-btn', !!action);
+    if (action) {
+      const b = document.createElement('button'); b.textContent = action.label;
+      b.addEventListener('click', () => { el.hidden = true; action.fn(); });
+      el.appendChild(b);
+    }
+    clearTimeout(toastT); toastT = setTimeout(() => { el.hidden = true; }, ms || (action ? 6000 : 2600));
   }
+
+  /* ---------- 復原 ---------- */
+  const undoStack = [];
+  function snapshot() {
+    const t = trip();
+    undoStack.push({ id: t.id, json: JSON.stringify(t) });
+    if (undoStack.length > 15) undoStack.shift();
+  }
+  function undo() {
+    const u = undoStack.pop(); if (!u) return;
+    const i = S.data.trips.findIndex((x) => x.id === u.id);
+    const restored = JSON.parse(u.json);
+    if (i >= 0) S.data.trips[i] = restored; else S.data.trips.push(restored);
+    S.data.current = u.id; save(); renderAll(); toast('已復原');
+  }
+  const undoAct = { label: '復原', fn: undo };
 
   /* ---------- 底部面板 ---------- */
   function setSheet(state) {
@@ -779,7 +885,7 @@
         case 'import': $('#fileInput').click(); break;
         case 'clearPlaces':
           openModal('<h3>刪除全部 ' + t.places.length + ' 個地點？</h3><p>無法復原。</p><div class="row gap end"><button class="btn" data-mact="close">取消</button><button class="btn danger" data-mact="ok">全部刪除</button></div>',
-            { ok: () => { t.places = []; t.legModes = {}; closeModal(); save(); renderAll(); } });
+            { ok: () => { snapshot(); t.places = []; t.legModes = {}; closeModal(); save(); renderAll(); toast('已刪除全部地點', 8000, undoAct); } });
           break;
         case 'pickA': setPick('a'); break;
         case 'pickB': setPick('b'); break;
@@ -787,12 +893,15 @@
         case 'measureFrom': S.ui.measure.a = id; map.closePopup(); switchTab('measure'); break;
         case 'measureTo': S.ui.measure.b = id; map.closePopup(); switchTab('measure'); break;
         case 'cancelPick': setPick(null); break;
+        case 'sample': loadSample(); break;
+        case 'dismissBanner': S.data.flags.installDismissed = Date.now(); save({ silent: true }); renderPanel(true); break;
       }
     };
     document.addEventListener('click', onAct);
     $('#tabBody').addEventListener('change', (e) => {
       const el = e.target;
       if (el.id === 'startDate') { trip().startDate = el.value; save(); renderPanel(true); }
+      else if (el.id === 'dayStart') { if (/^\d{2}:\d{2}$/.test(el.value)) { trip().dayStart = el.value; save(); renderPanel(true); } }
       else if (el.dataset.act === 'moveDay') moveToDay(el.dataset.id, parseInt(el.value, 10) || 0);
       else if (el.id === 'mA' || el.id === 'mB') {
         S.ui.measure[el.id === 'mA' ? 'a' : 'b'] = el.value; renderPanel(); renderMap(false);
@@ -822,6 +931,7 @@
   async function handleIncoming() {
     const hash = location.hash || '';
     const params = new URLSearchParams(location.search);
+    if (hash.length > 300000) { history.replaceState(null, '', baseUrl()); modalMsg('連結太大', '這個分享連結異常地大，已拒絕開啟。'); return; }
     if (hash.startsWith('#t=')) {
       try {
         const t = C.unpackTrip(JSON.parse(await decompress(hash.slice(3))));
@@ -860,9 +970,20 @@
     renderAll(true);
     handleIncoming();
     startSync();
-    if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+    if ('serviceWorker' in navigator && location.protocol === 'https:') {
+      navigator.serviceWorker.register('sw.js').then((reg) => {
+        reg.addEventListener('updatefound', () => {
+          const nw = reg.installing;
+          if (nw) nw.addEventListener('statechange', () => {
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) toast('有新版本', 15000, { label: '重新整理', fn: () => location.reload() });
+          });
+        });
+      }).catch(() => {});
+    }
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    if (darkMQ && darkMQ.addEventListener) darkMQ.addEventListener('change', () => { if (settings().tiles === 'auto') setTiles(); });
     window.addEventListener('online', () => { S.requested.clear(); scheduleRender(); });
-    window.TripApp = { S, trip, renderAll, C }; // 方便除錯與測試
+    window.TripApp = { S, trip, renderAll, C, tripText: () => tripText(trip()), undo }; // 方便除錯與測試
   }
   start();
 })();

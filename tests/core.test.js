@@ -206,3 +206,26 @@ test('sanitizeTrip：擋掉惡意或錯誤欄位', () => {
   assert.equal(t.places.length, 1);
   assert.deepEqual(t.legModes, {});
 });
+
+test('timeline：有住宿時含頭尾移動，時間正確', () => {
+  const r = C.timeline('09:00', [600, 1200, 900], [60, 90], true);
+  assert.deepEqual(r.stops.map((x) => [C.hm(x.arrive), C.hm(x.depart)]), [['09:10', '10:10'], ['10:30', '12:00']]);
+  assert.equal(C.hm(r.end), '12:15');
+  const n = C.timeline('08:30', [1800], [30, 30], false);
+  assert.equal(C.hm(n.stops[1].arrive), '09:30');
+});
+
+test('gmapsDayUrl：起終點與中途點、最多 9 個', () => {
+  const pts = Array.from({ length: 13 }, (_, i) => ({ lat: 35 + i / 100, lng: 139 }));
+  const u = C.gmapsDayUrl(pts, 'walk');
+  assert.ok(u.includes('origin=35,139') && u.includes('destination=35.12,139') && u.includes('travelmode=walking'));
+  assert.equal(decodeURIComponent(u.split('waypoints=')[1].split('&')[0]).split('|').length, 9);
+  assert.equal(C.gmapsDayUrl([pts[0]], 'walk'), '');
+});
+
+test('分享往返保留每日出發時間', () => {
+  const t = C.newTrip('x'); t.dayStart = '07:45';
+  t.places = [C.sanitizePlace({ name: 'a', lat: 35, lng: 139 })];
+  assert.equal(C.unpackTrip(JSON.parse(JSON.stringify(C.packTrip(t)))).dayStart, '07:45');
+  assert.equal(C.sanitizeTrip({ dayStart: '25:99' }).dayStart, '09:00');
+});

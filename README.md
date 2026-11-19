@@ -21,11 +21,14 @@ iPhone 用 Safari 打開 → 分享 → **加入主畫面**，之後就像 App �
 | 📏 量距離 | 任選兩點（或「我的位置」、地圖上任一點），同時算出四種交通方式的時間、距離與直線距離 |
 | 📤 分享 | 產生行程連結傳給同行的人、下載／匯入 .json 備份、開啟多人即時同步 |
 
+**v1.1 新增**：每站抵達／離開時間（設定每天幾點出門）、整天路線一鍵開 Google Maps、文字行程（貼 LINE）、刪除與重排可「復原」、範例行程、深色模式地圖、新版提示。
+
 **小技巧**
 - 手動把地點移到別天時，它會自動 🔒 鎖定，之後再按「自動排行程」也不會被移走
 - 地圖上點任一個標記 →「從這裡量／量到這裡」
 - 看過的地圖會留在手機裡，到國外沒網路時，那些範圍還看得到
 - 電腦版可以直接把檔案拖進視窗匯入
+- 「整天導航」會把當天所有站點一次帶進 Google Maps（Google 最多支援 9 個中途點；iPhone 的 Google Maps App 可能只顯示前幾個）
 
 ## 把 Google Maps 存的地點整批匯入
 
@@ -75,8 +78,14 @@ iPhone 用 Safari 打開 → 分享 → **加入主畫面**，之後就像 App �
    service cloud.firestore {
      match /databases/{database}/documents {
        match /trips/{tripId} {
-         allow read, write: if request.auth != null
-           && (request.resource == null || request.resource.size() < 900000);
+         // 只能用「知道代碼」的方式讀取單一行程，不能列出全部
+         allow get: if request.auth != null;
+         allow create, update: if request.auth != null
+           && tripId.matches('^[a-z0-9]{6,40}$')
+           && request.resource.data.keys().hasOnly(['data', 'updatedAt', 'by'])
+           && request.resource.data.data is string
+           && request.resource.data.data.size() < 900000;
+         allow list, delete: if false;
        }
      }
    }
@@ -87,9 +96,17 @@ iPhone 用 Safari 打開 → 分享 → **加入主畫面**，之後就像 App �
 8. 📤 分享 → **☁️ 開啟這趟旅程的即時同步** → 把「共同編輯連結」傳給同行的人
 
 > Firebase 免費方案（Spark）每天可讀 5 萬次、寫 2 萬次，旅遊用綽綽有餘，**不用綁卡**。
-> 隱私：行程的代碼是 16 碼亂數，只有拿到連結的人能存取。不要把共同編輯連結貼在公開的地方。
+> 隱私：行程代碼是 16 碼亂數，規則禁止「列出全部行程」，所以只有拿到連結的人能讀寫那一趟。共同編輯連結不要貼在公開的地方。
 
 ---
+
+## 安全與隱私
+
+- 資料預設只存在你的裝置（瀏覽器的 localStorage）；**一定要加入主畫面**，否則 iPhone Safari 可能在 7 天沒使用後清除網站資料。重要行程請下載備份。
+- 分享連結＝整份行程（含備註），傳出去就等於給對方一份副本。
+- 網頁設有內容安全政策（CSP），只允許連到地圖、路線、搜尋、Google、Firebase 這幾個服務；所有匯入資料顯示前都會跳脫處理。
+- 算路線、搜尋時，地點座標會送到 OpenStreetMap／FOSSGIS（以及有金鑰時的 Google）。
+- Google 金鑰存在你的瀏覽器裡，懂技術的人能看到；請務必設定網站限制＋每日上限（見上方步驟）。
 
 ## 檔案結構
 
@@ -117,7 +134,7 @@ tests/                單元測試＋端對端測試
 ## 開發與測試
 
 ```bash
-node --test tests/core.test.js     # 21 項單元測試
+node --test tests/core.test.js     # 24 項單元測試
 pip install playwright pillow
 python3 tests/e2e.py               # 25 項端對端測試（模擬外部服務），截圖輸出到 tests/out/
 ```

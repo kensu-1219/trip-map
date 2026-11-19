@@ -2,21 +2,26 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tile.openstreetmap.org https://*.basemaps.cartocdn.com; connect-src 'self' https://routing.openstreetmap.de https://nominatim.openstreetmap.org https://*.googleapis.com https://tile.openstreetmap.org https://*.basemaps.cartocdn.com; frame-src https://*.firebaseapp.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>旅遊地圖 Trip Map</title>
-<meta name="theme-color" content="#1f6feb">
+<meta name="theme-color" content="#0e7c86">
+<meta name="description" content="出國旅遊行程地圖：距離、交通方式、Google 地點匯入、自動排行程">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="旅遊地圖">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon-192.png">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="icons/favicon-64.png" type="image/png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
 <header id="topbar">
+  <img id="logo" src="icons/icon-192.png" alt="">
   <select id="tripSelect" aria-label="選擇旅程"></select>
   <span id="syncBadge" class="badge" hidden></span>
   <button id="btnShare" class="icon-btn" title="分享">📤</button>
