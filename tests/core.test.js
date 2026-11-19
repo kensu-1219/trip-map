@@ -311,3 +311,28 @@ test('每週營業時間：OSM 與 Google 格式、公休、依星期判斷', ()
   assert.equal(C.hoursFor({ hours: '10:00-12:00', hoursWeek: g }, '2026-12-22'), '10:00-12:00');
   assert.match(C.weekSummary(C.parseOSMHours('Mo-Fr 10:00-20:00; Sa,Su 11:00-18:00')), /一–五 10:00-20:00；六、日 11:00-18:00/);
 });
+
+test('多城市：每晚不同住宿 → 依住宿分配地點、起終點正確', () => {
+  const t = C.newTrip('關西');
+  t.days = 3;
+  t.base = C.sanitizePlace({ id: 'base', name: '京都飯店', lat: 35.0037, lng: 135.7588 });
+  t.dayBase = { 3: { name: '大阪飯店', lat: 34.6937, lng: 135.5023 } };
+  t.places = [
+    ['清水寺', 34.9949, 135.785], ['金閣寺', 35.0394, 135.7292], ['伏見稻荷', 34.9671, 135.7727], ['嵐山', 35.017, 135.6717],
+    ['大阪城', 34.6873, 135.5262], ['道頓堀', 34.6687, 135.5013], ['通天閣', 34.6525, 135.5063],
+  ].map(([name, lat, lng]) => C.sanitizePlace({ name, lat, lng }));
+  const s = C.sanitizeTrip(t);
+  assert.equal(s.dayBase[3].name, '大阪飯店'); assert.equal(s.dayBase[3].id, 'base-3');
+  assert.ok(C.multiHotel(s));
+  const e3 = C.dayEnds(s, 3);
+  assert.equal(e3.start.name, '京都飯店'); assert.equal(e3.end.name, '大阪飯店');
+  s.places = C.planDays(s);
+  const day = (n) => s.places.find((p) => p.name === n).day;
+  assert.equal(day('大阪城'), 3); assert.equal(day('道頓堀'), 3); assert.equal(day('通天閣'), 3);
+  assert.ok([1, 2].includes(day('清水寺')) && [1, 2].includes(day('金閣寺')));
+  const b = C.unpackTrip(JSON.parse(JSON.stringify(C.packTrip(s))));
+  assert.equal(b.dayBase[3].name, '大阪飯店');
+  s.legModes[C.legKey({ id: 'base' }, { id: 'base-3' })] = 'drive';
+  const b2 = C.unpackTrip(JSON.parse(JSON.stringify(C.packTrip(s))));
+  assert.equal(b2.legModes['base>base-3'], 'drive');
+});

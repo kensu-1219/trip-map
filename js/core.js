@@ -449,6 +449,13 @@
     out.dayStart = /^([01]\d|2[0-3]):[0-5]\d$/.test(t.dayStart || '') ? t.dayStart : '09:00';
     if (Number.isFinite(+t.lastBackup)) out.lastBackup = +t.lastBackup;
     out.base = t.base ? sanitizePlace({ ...t.base, id: 'base', day: 0 }) : null;
+    out.dayBase = {};
+    if (t.dayBase && typeof t.dayBase === 'object') {
+      for (const [k, v] of Object.entries(t.dayBase)) {
+        const d = parseInt(k, 10);
+        if (d >= 1 && d <= 60 && v) { const sp = sanitizePlace({ ...v, id: 'base-' + d, day: 0, cat: 'hotel' }); if (sp) out.dayBase[d] = sp; }
+      }
+    }
     out.places = (Array.isArray(t.places) ? t.places : []).map(sanitizePlace).filter(Boolean).slice(0, 5000);
     out.legModes = {};
     if (t.legModes && typeof t.legModes === 'object') {
@@ -646,6 +653,16 @@
    * locked 的地點保留原本的天數。base（住宿）作為每天起終點。
    * 回傳新的 places 陣列（不修改原物件）。
    */
+  /** 第 d 晚住哪：每天自訂的住宿，沒設就用預設住宿 */
+  function nightHotel(trip, d) { return (trip.dayBase && trip.dayBase[d]) || trip.base || null; }
+  /** 第 d 天從哪出發、回到哪：前一晚的住宿 → 今晚的住宿 */
+  function dayEnds(trip, d) {
+    const end = nightHotel(trip, d);
+    const start = d > 1 ? nightHotel(trip, d - 1) || end : nightHotel(trip, 1);
+    return { start, end };
+  }
+  const multiHotel = (trip) => !!trip.dayBase && Object.keys(trip.dayBase).some((k) => trip.dayBase[k]);
+
   function planDays(trip) {
     const days = Math.max(1, trip.days | 0);
     const places = trip.places.map((p) => ({ ...p }));
@@ -659,7 +676,49 @@
     let deficit = free.length - caps.reduce((a, b) => a + b, 0);
     for (let j = 0; deficit > 0; j = (j + 1) % days) { caps[j]++; deficit--; }
 
-    if (free.length) {
+    if (free.length && multiHotel(trip)) {
+      // 多城市：先把「起終點相近」的天數合成一組，地點分到最近的一組，組內再平均分天
+      const anchors = Array.from({ length: days }, (_, d) => {
+        const e = dayEnds(trip, d + 1);
+        return e.start && e.end ? centroid([e.start, e.end]) : e.end || e.start;
+      });
+      const groups = [];
+      anchors.forEach((a, d) => {
+        const g = a && groups.find((x) => x.anchor && haversine(x.anchor, a) < 5000);
+        if (g) g.days.push(d); else groups.push({ anchor: a, days: [d] });
+      });
+      const gCap = groups.map((g) => Math.ceil(g.days.reduce((s2, d) => s2 + caps[d], 0) * 1.4) + 1);
+      const gCnt = groups.map(() => 0);
+      const gOf = new Array(free.length);
+      const ord = free.map((p, i) => {
+        const ds = groups.map((g) => (g.anchor ? haversine(p, g.anchor) : 1e12)).sort((x, y) => x - y);
+        return { i, regret: (ds[1] || 0) - ds[0] };
+      }).sort((x, y) => y.regret - x.regret);
+      for (const { i } of ord) {
+        const ranked = groups.map((g, gi) => ({ gi, dist: g.anchor ? haversine(free[i], g.anchor) : 1e12 })).sort((x, y) => x.dist - y.dist);
+        const pick = ranked.find((r) => gCnt[r.gi] < gCap[r.gi]) || ranked[0];
+        gOf[i] = pick.gi; gCnt[pick.gi]++;
+      }
+      groups.forEach((g, gi) => {
+        const pts = free.filter((_, i) => gOf[i] === gi);
+        if (!pts.length) return;
+        if (g.days.length === 1) { pts.forEach((p) => { p.day = g.days[0] + 1; }); return; }
+        const k = Math.min(g.days.length, pts.length);
+        const per = Math.ceil(pts.length / k);
+        const asg = balancedClusters(pts, k, Array(k).fill(per));
+        const cl = [...new Set(asg)];
+        const cents = cl.map((c) => centroid(pts.filter((_, i) => asg[i] === c)));
+        // 依各天起點遠近配對：離前一晚住宿近的群組排前面
+        const used = new Set(); const mapD = {};
+        g.days.forEach((d) => {
+          const st = dayEnds(trip, d + 1).start || g.anchor;
+          let best = -1, bd = Infinity;
+          cl.forEach((c, ci) => { if (!used.has(c)) { const dd = st ? haversine(st, cents[ci]) : ci; if (dd < bd) { bd = dd; best = c; } } });
+          if (best !== -1) { used.add(best); mapD[best] = d; }
+        });
+        pts.forEach((p, i) => { p.day = (mapD[asg[i]] != null ? mapD[asg[i]] : g.days[0]) + 1; });
+      });
+    } else if (free.length) {
       const assign = balancedClusters(free, Math.min(days, free.length), caps.slice(0, Math.min(days, free.length)));
       // 把群組對應到天數：有鎖定點的天數優先配最接近的群組
       const groups = [...new Set(assign)];
@@ -690,7 +749,8 @@
     // 每天排序
     for (let d = 1; d <= days; d++) {
       const pts = places.filter((p) => p.day === d);
-      const seq = orderStops(pts, trip.base, trip.base);
+      const e = dayEnds(trip, d);
+      const seq = orderStops(pts, e.start, e.end);
       seq.forEach((p, i) => { p.order = i; });
     }
     return places;
@@ -851,6 +911,7 @@
     return {
       n: t.name, d: t.days, s: t.startDate || undefined, h: t.dayStart && t.dayStart !== '09:00' ? t.dayStart : undefined,
       b: t.base ? [t.base.name, +t.base.lat.toFixed(6), +t.base.lng.toFixed(6)] : undefined,
+      db: t.dayBase && Object.keys(t.dayBase).length ? Object.fromEntries(Object.entries(t.dayBase).map(([d, v]) => [d, [v.name, +v.lat.toFixed(6), +v.lng.toFixed(6)]])) : undefined,
       p: t.places.map((p) => [p.name, +p.lat.toFixed(6), +p.lng.toFixed(6), p.day, p.order, p.note || 0, p.locked ? 1 : 0, p.stay === 60 ? 0 : p.stay, p.url && p.url.length < 300 ? p.url : 0, p.cat || 0, p.hours || 0, p.cost || 0, p.done ? 1 : 0, p.hoursWeek || 0]),
       th: t.theme && t.theme !== 'auto' ? t.theme : undefined, cu: t.currency || undefined,
       cl: t.checklist && t.checklist.length ? t.checklist.map((c) => [c.t, c.done ? 1 : 0, c.g || 0]) : undefined,
@@ -859,6 +920,7 @@
   }
   function packModes(t) {
     const idx = { base: 'b' };
+    Object.keys(t.dayBase || {}).forEach((d) => { idx['base-' + d] = 'b' + d; });
     t.places.forEach((p, i) => { idx[p.id] = i; });
     const out = {};
     for (const [k, v] of Object.entries(t.legModes || {})) {
@@ -872,6 +934,7 @@
     t.days = o.d; t.startDate = o.s || ''; t.dayStart = o.h || '09:00'; t.theme = o.th || 'auto'; t.currency = o.cu || '';
     t.checklist = (o.cl || []).map((c) => ({ t: c[0], done: !!c[1], g: c[2] || '' }));
     if (o.b) t.base = { name: o.b[0], lat: o.b[1], lng: o.b[2] };
+    if (o.db) t.dayBase = Object.fromEntries(Object.entries(o.db).map(([d, v]) => [d, { name: v[0], lat: v[1], lng: v[2] }]));
     const idMap = [];
     t.places = (o.p || []).map((a, i) => {
       const id = 'p' + i.toString(36);
@@ -880,7 +943,7 @@
     });
     t.legModes = {};
     for (const [k, v] of Object.entries(o.m || {})) {
-      const [a, b] = k.split('>').map((x) => (x === 'b' ? 'base' : idMap[+x]));
+      const [a, b] = k.split('>').map((x) => (x === 'b' ? 'base' : /^b\d+$/.test(x) ? 'base-' + x.slice(1) : idMap[+x]));
       if (a && b) t.legModes[a + '>' + b] = v;
     }
     return sanitizeTrip(t);
@@ -891,6 +954,6 @@
     parseGeoJSON, parseTakeoutCSV, parseKML, newTrip, sanitizeTrip, sanitizePlace, mergePlaces,
     MODES, estimateLeg, suggestMode, gmapsDirUrl, gmapsPlaceUrl, gmapsDayUrl, timeline, hm, toMin, centroid, balancedClusters,
     orderStops, planDays, pathLen, dayStops, legKey, parseOsrm, decodePolyline, parseGoogleRoute,
-    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary,
+    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel,
   };
 });

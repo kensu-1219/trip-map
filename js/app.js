@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.6.0';
+  const VERSION = '1.7.0';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -45,8 +45,9 @@
   }
   const trip = () => S.data.trips.find((t) => t.id === S.data.current);
   const settings = () => S.data.settings;
-  const allPoints = (t) => (t.base ? [t.base] : []).concat(t.places);
-  const findPoint = (t, id) => (id === 'base' ? t.base : id === 'me' ? S.ui.me : t.places.find((p) => p.id === id));
+  const hotels = (t) => { const out = t.base ? [t.base] : []; Object.values(t.dayBase || {}).forEach((h) => { if (h && !out.some((x) => x.name === h.name && C.haversine(x, h) < 50)) out.push(h); }); return out; };
+  const allPoints = (t) => hotels(t).concat(t.places);
+  const findPoint = (t, id) => (id === 'base' ? t.base : /^base-\d+$/.test(id || '') ? (t.dayBase || {})[id.slice(5)] : id === 'me' ? S.ui.me : t.places.find((p) => p.id === id));
 
   /* ================= 地圖 ================= */
   let map, markerLayer, routeLayer, tileLayer, meLayer, nearbyLayer;
@@ -97,9 +98,9 @@
       if (!dim(p) && t.places.length <= 300) m.bindTooltip(esc(p.name.length > 14 ? p.name.slice(0, 13) + '…' : p.name), { permanent: true, direction: 'right', offset: [14, 0], className: 'plabel' });
       m.addTo(markerLayer);
     }
-    if (t.base) {
-      L.marker([t.base.lat, t.base.lng], { icon: pinIcon('#2f2c25', '', 'base', I('hotel')), title: t.base.name, zIndexOffset: 500 })
-        .bindPopup(() => popupHtml(t.base)).addTo(markerLayer);
+    for (const h of hotels(t)) {
+      L.marker([h.lat, h.lng], { icon: pinIcon('#2f2c25', '', 'base', I('hotel')), title: h.name, zIndexOffset: 500 })
+        .bindPopup(() => popupHtml(h)).addTo(markerLayer);
     }
     // 路線
     const days = f ? [f] : range(t.days);
@@ -118,7 +119,7 @@
     if (S.ui.tab === 'measure' && ma && mb) {
       L.polyline([[ma.lat, ma.lng], [mb.lat, mb.lng]], { color: '#111', weight: 2, dashArray: '2 6' }).addTo(routeLayer);
     }
-    if (fit) fitTo(visible.length ? visible.concat(t.base ? [t.base] : []) : allPoints(t));
+    if (fit) fitTo(visible.length ? visible.concat(f ? [C.dayEnds(t, f).start, C.dayEnds(t, f).end].filter(Boolean) : hotels(t)) : allPoints(t));
   }
   function sheetPad() {
     if (window.innerWidth >= 900) return 0;
@@ -134,7 +135,7 @@
   }
 
   function popupHtml(p) {
-    const isBase = p.id === 'base';
+    const isBase = /^base/.test(p.id);
     return '<div class="pop"><b>' + esc(p.name) + '</b>' +
       (isBase ? '<div class="muted">住宿（每天起終點）</div>' : '<div class="muted">' + (p.day ? 'Day ' + p.day + ' · 第 ' + (p.order + 1) + ' 站' : '尚未排入行程') + '</div>') +
       (isBase ? '' : '<div class="muted">' + catIc(p.cat) + ' ' + C.CATS[p.cat].label + (p.hours ? ' · ' + I('clock') + ' ' + esc(p.hours) : '') + '</div>' +
@@ -157,8 +158,9 @@
     setPick(null);
     if (pick === 'add') {
       askText('新增地點', '名稱', '地圖上的點', (name) => { addPlaces([{ name, ...pt }]); });
-    } else if (pick === 'base') {
-      askText('設定住宿', '住宿名稱', '飯店', (name) => { trip().base = C.sanitizePlace({ id: 'base', name, ...pt }); save(); renderAll(); });
+    } else if (/^base/.test(pick)) {
+      const d = +(pick.split(':')[1] || 0);
+      askText(d ? 'Day ' + d + ' 晚上的住宿' : '設定住宿', '住宿名稱', '飯店', (name) => { setHotel(trip(), d, { name, ...pt }); save(); renderAll(); });
     } else if (pick === 'a' || pick === 'b') {
       const id = 'mp' + pick;
       S.ui.mpoints = S.ui.mpoints || {};
@@ -173,7 +175,7 @@
   function setPick(mode) {
     S.ui.pick = mode;
     const h = $('#pickHint');
-    const text = { add: '點地圖新增地點', base: '點地圖設定住宿位置', a: '點地圖選起點', b: '點地圖選終點' }[mode];
+    const text = { add: '點地圖新增地點', base: '點地圖設定住宿位置', a: '點地圖選起點', b: '點地圖選終點' }[mode] || (/^base:/.test(mode || '') ? '點地圖設定 Day ' + mode.split(':')[1] + ' 晚上的住宿' : '');
     h.hidden = !mode;
     h.innerHTML = mode ? I('pin') + ' ' + text + ' <button class="btn sm" data-act="cancelPick">取消</button>' : '';
     document.body.classList.toggle('picking', !!mode);
@@ -184,7 +186,8 @@
   const range = (n) => Array.from({ length: n }, (_, i) => i + 1);
   function dayLegs(t, d) {
     const stops = C.dayStops(t, d);
-    const seq = t.base && stops.length ? [t.base].concat(stops, [t.base]) : stops;
+    const e = C.dayEnds(t, d);
+    const seq = e.start && e.end && stops.length ? [e.start].concat(stops, [e.end]) : stops;
     const out = [];
     for (let i = 0; i < seq.length - 1; i++) out.push([seq[i], seq[i + 1]]);
     return out;
@@ -240,7 +243,7 @@
       '<label class="field">出發日 <input type="date" id="startDate" value="' + esc(t.startDate) + '"></label>' +
       '<label class="field">每天 <input type="time" id="dayStart" value="' + esc(t.dayStart || '09:00') + '" step="900"> 出門</label>' +
       '</div>' + installBanner() +
-      '<div class="row gap base-row">' + I('hotel') + ' <span class="grow">' + (t.base ? '<b>' + esc(t.base.name) + '</b> <span class="muted">每天從這裡出發、回來</span>' : '<span class="muted">未設定住宿（設定後每天會從住宿出發）</span>') + '</span><button class="btn sm" data-act="setBase">' + (t.base ? '更換' : '設定') + '</button></div>' +
+      '<div class="row gap base-row">' + I('hotel') + ' <span class="grow">' + (t.base ? '<b>' + esc(t.base.name) + '</b> <span class="muted">' + (C.multiHotel(t) ? '預設住宿（部分天數另有設定）' : '每天從這裡出發、回來') + '</span>' : '<span class="muted">未設定住宿（設定後每天會從住宿出發）</span>') + '</span><button class="btn sm" data-act="setBase">' + (t.base ? '更換' : '設定') + '</button></div>' +
       '<button class="btn primary block" data-act="autoplan"' + (t.places.length ? '' : ' disabled') + '>' + I('auto') + ' 自動排行程 <span style="opacity:.7;font-weight:400">· 依遠近分 ' + t.days + ' 天</span></button>';
     if (!t.places.length) return h + welcomeHtml();
     h += todayCard(t);
@@ -272,8 +275,9 @@
     let move = 0, dist = 0, est = false;
     const infos = legs.map(([a, b]) => { const li = legInfo(t, a, b); move += li.res.duration; dist += li.res.distance; est = est || li.res.estimated; return li; });
     const stay = stops.reduce((s, p) => s + (p.stay || 0) * 60, 0);
-    const tl = C.timeline(t.dayStart, infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), !!t.base);
-    const seq = t.base && stops.length ? [t.base].concat(stops, [t.base]) : stops;
+    const ends = C.dayEnds(t, d), hasB = !!(ends.start && ends.end);
+    const tl = C.timeline(t.dayStart, infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), hasB);
+    const seq = hasB && stops.length ? [ends.start].concat(stops, [ends.end]) : stops;
     const mainMode = mostCommonMode(infos);
     let h = '<div class="day" data-day="' + d + '"><div class="day-h" style="--c:' + dc(d) + '"><b>DAY ' + String(d).padStart(2, '0') + '</b> <span>' + dayDate(t, d) + '</span>' +
       (seq.length >= 2 ? '<span class="day-tools"><a class="btn sm ghost" target="_blank" rel="noopener" href="' + esc(C.gmapsDayUrl(seq, mainMode)) + '" title="整天路線在 Google Maps 開啟（最多 9 個中途點）">' + I('nav') + ' 整天導航</a></span>' : '') +
@@ -282,12 +286,12 @@
       (dayCost(stops) ? ' · 花費 ' + (t.currency ? esc(t.currency) + ' ' : '') + fmtMoney(dayCost(stops)) : '') + '</span></div>';
     if (!stops.length) return h + '<div class="empty sm">這天沒有安排</div></div>';
     let li = 0;
-    if (t.base) h += baseRow(t.base, C.hm(C.toMin(t.dayStart)) + ' 出發') + legRow(t, infos[li++]);
+    if (hasB) h += baseRow(ends.start, C.hm(C.toMin(t.dayStart)) + ' 出發', d > 1 && ends.start !== ends.end ? '退房' : '') + legRow(t, infos[li++]);
     stops.forEach((p, i) => {
       h += stopRow(t, p, false, i, stops.length, tl.stops[i]);
-      if (i < stops.length - 1 || t.base) h += legRow(t, infos[li++]);
+      if (i < stops.length - 1 || hasB) h += legRow(t, infos[li++]);
     });
-    if (t.base) h += baseRow(t.base, C.hm(tl.end) + ' 回到住宿');
+    if (hasB) h += baseRow(ends.end, C.hm(tl.end) + (ends.start !== ends.end ? ' 入住' : ' 回到住宿'), '', d);
     return h + '</div>';
   }
   const dayCost = (stops) => stops.reduce((a, p) => a + (p.cost || 0), 0);
@@ -295,7 +299,8 @@
     const c = {}; infos.forEach((i) => { c[i.mode] = (c[i.mode] || 0) + 1; });
     return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || 'transit';
   }
-  const baseRow = (b, time) => '<div class="stop base"><span class="num base">' + I('hotel') + '</span><span class="grow">' + esc(b.name) + '</span>' + (time ? '<span class="time">' + time + '</span>' : '') + '</div>';
+  const baseRow = (b, time, tag, d) => '<div class="stop base"><span class="num base">' + I('hotel') + '</span><span class="grow">' + esc(b.name) + (tag ? ' <small class="muted">' + tag + '</small>' : '') + '</span>' + (time ? '<span class="time">' + time + '</span>' : '') +
+    (d ? '<button class="btn sm ghost" data-act="dayHotel" data-d="' + d + '" title="這天晚上住哪">' + I('hotel') + ' 今晚</button>' : '') + '</div>';
 
   function stopRow(t, p, unassigned, i, n, tm) {
     const reorder = S.ui.reorder && !unassigned;
@@ -393,7 +398,7 @@
     const opts = (sel) => '<option value="">— 選擇 —</option>' +
       (S.ui.me ? '<option value="me"' + (sel === 'me' ? ' selected' : '') + '>◎ 我的位置</option>' : '') +
       extra.map((p) => '<option value="' + p.id + '"' + (sel === p.id ? ' selected' : '') + '>⌖ ' + esc(p.name) + '（' + p.lat.toFixed(4) + ',' + p.lng.toFixed(4) + '）</option>').join('') +
-      pts.map((p) => '<option value="' + p.id + '"' + (sel === p.id ? ' selected' : '') + '>' + (p.id === 'base' ? '■ 住宿 ' : p.day ? 'D' + p.day + ' ' : '') + esc(p.name) + '</option>').join('');
+      pts.map((p) => '<option value="' + p.id + '"' + (sel === p.id ? ' selected' : '') + '>' + (/^base/.test(p.id) ? '■ 住宿 ' : p.day ? 'D' + p.day + ' ' : '') + esc(p.name) + '</option>').join('');
     let h = sec('// Measure · 量距離') + '<div class="measure">' +
       '<label class="lbl">起點</label><div class="row gap"><select id="mA" class="grow">' + opts(S.ui.measure.a) + '</select><button class="btn sm" data-act="pickA" title="在地圖上點">' + I('map') + '</button></div>' +
       '<div class="center"><button class="icon-btn" data-act="swap" title="對調">' + I('swap') + '</button></div>' +
@@ -485,7 +490,7 @@
     const days = (new Date(iso + 'T12:00:00') - Date.now()) / 864e5;
     if (days > 15.5 || days < -1) return '';
     const stops = C.dayStops(t, d);
-    const pts = stops.length ? stops : t.base ? [t.base] : t.places.slice(0, 1);
+    const pts = stops.length ? stops : C.nightHotel(t, d) ? [C.nightHotel(t, d)] : t.places.slice(0, 1);
     if (!pts.length) return '';
     const c = C.centroid(pts);
     const key = iso + '@' + c.lat.toFixed(1) + ',' + c.lng.toFixed(1);
@@ -527,7 +532,7 @@
       (S.ui.dayFilter !== d ? '<button class="btn sm" data-act="gotoToday" data-d="' + d + '">只看今天</button>' : '') + '</div>';
     if (next) {
       const prevDone = stops.filter((p) => p.done).pop();
-      const from = S.ui.me || prevDone || t.base;
+      const from = S.ui.me || prevDone || C.dayEnds(t, d).start;
       const mode = from ? (t.legModes[C.legKey(from, next)] || C.suggestMode(C.haversine(from, next))) : 'transit';
       h += '<div class="today-next"><span class="cat">' + catIc(next.cat) + '</span><span class="grow"><small class="muted">下一站</small><br><b>' + esc(next.name) + '</b>' +
         (C.hoursFor(next, dayISO(t, d)) ? '<br><span class="muted">' + I('clock') + ' ' + esc(C.hoursFor(next, dayISO(t, d)) === 'off' ? '今天公休' : C.hoursFor(next, dayISO(t, d))) + '</span>' : '') + '</span>' +
@@ -580,7 +585,8 @@
     for (let d = 1; d <= t.days; d++) {
       const stops = C.dayStops(t, d); if (!stops.length) continue;
       const infos = dayLegs(t, d).map(([a, b]) => legInfo(t, a, b));
-      const tl = C.timeline(t.dayStart, infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), !!t.base);
+      const e0 = C.dayEnds(t, d);
+      const tl = C.timeline(t.dayStart, infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), !!(e0.start && e0.end));
       stops.forEach((p, i) => events.push({
         date: dayISO(t, d), start: tl.stops[i].arrive, end: tl.stops[i].depart, uid: t.id + '-' + p.id,
         title: 'D' + d + ' ' + C.CATS[p.cat].emoji + ' ' + p.name, location: p.address || p.name, lat: p.lat, lng: p.lng,
@@ -866,22 +872,37 @@
     });
   }
 
-  function setBaseModal() {
+  function setHotel(t, d, src) {
+    if (d) { t.dayBase = t.dayBase || {}; t.dayBase[d] = C.sanitizePlace({ ...src, id: 'base-' + d, day: 0, cat: 'hotel' }); }
+    else t.base = C.sanitizePlace({ ...src, id: 'base', day: 0, cat: 'hotel' });
+  }
+  /** d=0：預設住宿（每天）；d>0：第 d 天晚上的住宿 */
+  function setBaseModal(d) {
+    d = d || 0;
     const t = trip();
-    openModal('<h3>設定住宿</h3><p class="muted">住宿會當作每天的起點和終點（排行程時也會考慮離住宿的遠近）。</p>' +
-      (t.places.length ? '<label class="lbl">從地點清單選一個當住宿</label><select id="bSel"><option value="">— 選擇 —</option>' + t.places.map((p) => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('') + '</select>' : '') +
-      '<div class="row gap wrap" style="margin-top:12px">' + (t.places.length ? '<button class="btn primary" data-mact="ok">使用選擇的地點</button>' : '') +
-      '<button class="btn" data-mact="pick">' + I('map') + ' 在地圖上點</button>' + (t.base ? '<button class="btn danger" data-mact="clear">不設住宿</button>' : '') + '<button class="btn" data-mact="close">取消</button></div>' +
+    const cur = d ? (t.dayBase || {})[d] : t.base;
+    const known = hotels(t);
+    openModal('<h3>' + (d ? 'Day ' + d + ' 晚上住哪' : '設定住宿') + '</h3><p class="muted">' +
+      (d ? '換城市時設定。Day ' + d + ' 會從前一晚的住宿出發、結束在這裡；Day ' + (d + 1) + ' 從這裡出發。' : '預設每天從這裡出發、回到這裡。換城市的話，可以在每天的最後一列按「今晚」個別設定。') + '</p>' +
+      (known.length ? '<label class="lbl">已設定過的住宿</label><select id="hSel"><option value="">— 選擇 —</option>' + known.map((h, i) => '<option value="' + i + '">' + esc(h.name) + '</option>').join('') + '</select>' : '') +
+      (t.places.length ? '<label class="lbl">或從地點清單選（會從清單移到住宿）</label><select id="bSel"><option value="">— 選擇 —</option>' + t.places.map((p) => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('') + '</select>' : '') +
+      '<div class="row gap wrap" style="margin-top:12px"><button class="btn primary" data-mact="ok">使用</button>' +
+      '<button class="btn" data-mact="pick">' + I('map') + ' 在地圖上點</button>' +
+      (cur ? '<button class="btn danger" data-mact="clear">' + (d ? '改回預設住宿' : '不設住宿') + '</button>' : '') + '<button class="btn" data-mact="close">取消</button></div>' +
       '<p class="muted small">住宿還沒在清單裡？先到「新增」搜尋或貼上飯店的 Google Maps 連結。</p>', {
       ok: () => {
-        const id = $('#bSel').value; if (!id) return;
-        const p = t.places.find((x) => x.id === id);
-        t.base = C.sanitizePlace({ ...p, id: 'base', day: 0 });
-        t.places = t.places.filter((x) => x !== p);
-        closeModal(); save(); renderAll(); toast('已把「' + p.name + '」設為住宿');
+        const hi = $('#hSel') ? $('#hSel').value : '';
+        const id = $('#bSel') ? $('#bSel').value : '';
+        if (hi !== '') { setHotel(t, d, known[+hi]); }
+        else if (id) {
+          const p = t.places.find((x) => x.id === id);
+          setHotel(t, d, p);
+          t.places = t.places.filter((x) => x !== p);
+        } else return;
+        closeModal(); save(); renderAll(); toast(d ? 'Day ' + d + ' 晚上住宿已設定，可以重新「自動排行程」讓地點依城市分配' : '已設定住宿', 6000);
       },
-      pick: () => { closeModal(); setPick('base'); },
-      clear: () => { t.base = null; closeModal(); save(); renderAll(); },
+      pick: () => { closeModal(); setPick(d ? 'base:' + d : 'base'); },
+      clear: () => { if (d) delete t.dayBase[d]; else t.base = null; closeModal(); save(); renderAll(); },
     });
   }
 
@@ -955,21 +976,23 @@
   function tripText(t) {
     const lines = ['🗺️ ' + t.name + '（' + t.days + ' 天）'];
     if (t.base) lines.push('🏨 住宿：' + t.base.name);
+    Object.entries(t.dayBase || {}).forEach(([d, h]) => lines.push('🏨 Day ' + d + ' 晚上住：' + h.name));
     for (let d = 1; d <= t.days; d++) {
       const stops = C.dayStops(t, d);
       if (!stops.length) continue;
       const infos = dayLegs(t, d).map(([a, b]) => legInfo(t, a, b));
-      const tl = C.timeline(t.dayStart, infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), !!t.base);
+      const e0 = C.dayEnds(t, d), hb = !!(e0.start && e0.end);
+      const tl = C.timeline(t.dayStart, infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), hb);
       lines.push('', '【Day ' + d + (dayDate(t, d) ? ' ' + dayDate(t, d) : '') + '】');
       let li = 0;
       const legTxt = (x) => '   ↓ ' + C.MODES[x.mode].icon + ' ' + (x.res.estimated ? '約' : '') + C.fmtDur(x.res.duration) + '（' + C.fmtDist(x.res.distance) + '）';
-      if (t.base) { lines.push(C.hm(C.toMin(t.dayStart)) + ' 從住宿出發'); lines.push(legTxt(infos[li++])); }
+      if (hb) { lines.push(C.hm(C.toMin(t.dayStart)) + ' 從住宿出發（' + e0.start.name + '）'); lines.push(legTxt(infos[li++])); }
       stops.forEach((p, i) => {
         lines.push(C.hm(tl.stops[i].arrive) + ' ' + C.CATS[p.cat].emoji + ' ' + p.name + (p.note ? '（' + p.note.replace(/\s+/g, ' ').slice(0, 60) + '）' : ''));
         lines.push('   ' + C.gmapsPlaceUrl(p));
-        if (i < stops.length - 1 || t.base) lines.push(legTxt(infos[li++]));
+        if (i < stops.length - 1 || hb) lines.push(legTxt(infos[li++]));
       });
-      if (t.base) lines.push(C.hm(tl.end) + ' 回到住宿');
+      if (hb) lines.push(C.hm(tl.end) + (e0.start !== e0.end ? ' 入住 ' + e0.end.name : ' 回到住宿'));
     }
     return lines.join('\n');
   }
@@ -1284,7 +1307,8 @@
         case 'days': t.days = Math.max(1, Math.min(60, t.days + +el.dataset.d)); if (S.ui.dayFilter > t.days) S.ui.dayFilter = 0; save(); renderAll(); break;
         case 'filter': S.ui.dayFilter = +el.dataset.d; renderPanel(true); renderMap(true); break;
         case 'autoplan': autoplan(); break;
-        case 'setBase': setBaseModal(); break;
+        case 'setBase': setBaseModal(0); break;
+        case 'dayHotel': setBaseModal(+el.dataset.d); break;
         case 'up': moveInDay(id, -1); break;
         case 'down': moveInDay(id, 1); break;
         case 'edit': map.closePopup(); editPlace(id); break;
