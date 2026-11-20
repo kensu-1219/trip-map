@@ -387,3 +387,41 @@ test('貼文字變行程：英文、同一行箭頭、第N天、日目', () => {
   assert.deepEqual(a.map((x) => [x.day, x.items.map((i) => i.name)]), [[1, ['淺草寺', '晴空塔', '上野公園']], [2, ['明治神宮', '表參道']], [3, ['鎌倉大佛']]]);
   assert.deepEqual(C.parseItineraryText('隨便一段沒有天數的文字'), []);
 });
+
+test('分帳：平均分攤、部分人分攤、最少轉帳、總和不差一分', () => {
+  const m = ['Ken', 'Amy', 'Bob'];
+  const ex = [
+    { title: '晚餐', amount: 3000, payer: 'Ken', split: m },
+    { title: '計程車', amount: 1000, payer: 'Amy', split: ['Amy', 'Bob'] },
+    { title: '門票', amount: 100, payer: 'Bob', split: m },
+  ].map((e) => C.sanitizeExpense(e, m));
+  const r = C.settle(m, ex);
+  assert.equal(r.total, 4100);
+  // Ken 付 3000、分攤 1033.34 → +1966.66；Amy 付 1000、分攤 1000+500+33.33 → -533.33；Bob 付 100、分攤 1000+500+33.33 → -1433.33
+  assert.equal(Math.round((r.balance.Ken + r.balance.Amy + r.balance.Bob) * 100), 0);
+  assert.equal(r.balance.Ken, 1966.66);
+  assert.ok(r.transfers.every((x) => x.to === 'Ken'));
+  assert.equal(r.transfers.length, 2);
+  assert.equal(Math.round(r.transfers.reduce((a, x) => a + x.amount, 0) * 100), 196666);
+  assert.equal(C.sanitizeExpense({ amount: -5 }, m), null);
+  assert.deepEqual(C.sanitizeExpense({ amount: 10, payer: 'X', split: ['Y'] }, m).split, m);
+});
+
+test('預訂：清理、依日期列出（住宿入住與退房）、分享往返', () => {
+  const t = C.newTrip('x');
+  t.bookings = [
+    { type: 'flight', title: 'BR198 台北→東京', date: '2026-12-20', time: '08:30', code: 'ABC123', cost: 12000 },
+    { type: 'hotel', title: '新宿飯店', date: '2026-12-20', time: '15:00', endDate: '2026-12-23', endTime: '11:00' },
+    { type: 'evil', title: '<b>x</b>', date: 'tomorrow', link: 'javascript:alert(1)' },
+    { title: '' },
+  ];
+  t.members = ['Ken', 'Amy']; t.expenses = [{ title: '午餐', amount: 2000, payer: 'Amy', split: ['Ken', 'Amy'] }];
+  const s = C.sanitizeTrip(t);
+  assert.equal(s.bookings.length, 3);
+  assert.equal(s.bookings[2].type, 'other'); assert.equal(s.bookings[2].date, ''); assert.equal(s.bookings[2].link, '');
+  assert.deepEqual(C.bookingsOn(s, '2026-12-20').map((x) => [x.b.type, x.kind]), [['flight', 'start'], ['hotel', 'in']]);
+  assert.deepEqual(C.bookingsOn(s, '2026-12-23').map((x) => [x.b.type, x.kind]), [['hotel', 'out']]);
+  const b = C.unpackTrip(JSON.parse(JSON.stringify(C.packTrip(s))));
+  assert.equal(b.bookings[0].code, 'ABC123'); assert.deepEqual(b.members, ['Ken', 'Amy']);
+  assert.equal(b.expenses[0].payer, 'Amy'); assert.deepEqual(b.expenses[0].split, ['Ken', 'Amy']);
+});

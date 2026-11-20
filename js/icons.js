@@ -78,6 +78,8 @@
     grip: '<rect x="8" y="5" width="2.4" height="2.4" fill="currentColor"/><rect x="13.6" y="5" width="2.4" height="2.4" fill="currentColor"/><rect x="8" y="10.8" width="2.4" height="2.4" fill="currentColor"/><rect x="13.6" y="10.8" width="2.4" height="2.4" fill="currentColor"/><rect x="8" y="16.6" width="2.4" height="2.4" fill="currentColor"/><rect x="13.6" y="16.6" width="2.4" height="2.4" fill="currentColor"/>',
     expand: '<path d="M6 9l6 6 6-6"/>',
     collapse: '<path d="M18 15l-6-6-6 6"/>',
+    ticket: '<path d="M3.5 7.5h17v3a1.8 1.8 0 0 0 0 3.6v3h-17v-3a1.8 1.8 0 0 0 0-3.6z"/><path d="M14.5 7.5v1.6M14.5 11.2v1.6M14.5 14.9v1.6"/>',
+    users: '<circle cx="9" cy="8" r="3.2"/><path d="M3 19.5c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><circle cx="16.8" cy="9" r="2.5"/><path d="M15.5 14.2c3 .1 5.5 2 5.5 5"/>',
     filter: '<path d="M3.5 4.5h17l-6.5 8v6l-4 2v-8z"/>',
   };
   const sprite = '<svg xmlns="http://www.w3.org/2000/svg" style="display:none">' +

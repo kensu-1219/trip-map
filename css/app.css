@@ -461,3 +461,28 @@ html[data-style="modern"] .pop-photo { border-radius: 16px 16px 0 0; }
 .stop.active { background: color-mix(in srgb, var(--pri) 7%, transparent); border-radius: 10px; }
 @keyframes flashRow { 0% { background: color-mix(in srgb, var(--pri) 28%, transparent); } 100% { background: transparent; } }
 .stop.flash { animation: flashRow 1.2s ease; border-radius: 10px; }
+
+/* 清單分頁：預訂／分帳／行李 */
+.segbar { display: flex; gap: 6px; margin: 2px 0 6px; }
+.segbar button { flex: 1; border: 1px solid var(--line); background: var(--card); color: var(--ink-soft); padding: 8px 4px; border-radius: var(--r); cursor: pointer; display: inline-flex; gap: 5px; align-items: center; justify-content: center; font-size: 13px; }
+.segbar button.on { background: var(--pri); color: var(--on-pri); border-color: var(--pri); font-weight: 650; }
+html[data-style="modern"] .segbar button { border: 0; background: var(--soft); }
+html[data-style="modern"] .segbar button.on { background: var(--ink); color: var(--card); }
+.bk { display: flex; gap: 10px; align-items: flex-start; padding: 12px; margin: 8px 0; background: var(--card); border-radius: var(--r); box-shadow: inset 0 0 0 1px var(--hair); line-height: 1.5; }
+html[data-style="modern"] .bk { box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 2px 10px rgba(0,0,0,.04); border-radius: 14px; }
+.bk-ic { flex: none; width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--pri) 12%, transparent); color: var(--pri); }
+.bk-ic .ic { width: 22px; height: 22px; }
+.bk-code { font-size: 13px; }
+.bk-code b { font-family: ui-monospace, Menlo, monospace; letter-spacing: .06em; }
+.linkbtn { border: 0; background: none; padding: 0 2px; cursor: pointer; color: var(--pri); vertical-align: middle; }
+.day-bk { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.bkchip { border: 0; background: color-mix(in srgb, var(--pri) 10%, transparent); color: var(--ink); border-radius: 999px; padding: 4px 10px 4px 8px; font-size: 12px; display: inline-flex; gap: 5px; align-items: center; cursor: pointer; }
+.bkchip .ic { width: 15px; height: 15px; color: var(--pri); }
+.chip.member { gap: 4px; } .chip.member::before { display: none; }
+.chip.member.pick input { width: 16px; min-height: 16px; margin: 0; accent-color: var(--pri); }
+.settle { background: var(--card); border-radius: var(--r); padding: 8px 12px; box-shadow: inset 0 0 0 1px var(--hair); }
+.srow { display: flex; gap: 8px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--hair); }
+.srow .muted { flex: 1; font-size: 12px; }
+.srow .pos { color: var(--ok); font-weight: 700; } .srow .neg { color: var(--danger); font-weight: 700; }
+.xfer { display: flex; gap: 6px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--hair); }
+.xfer .ic { width: 16px; height: 16px; color: var(--muted); }

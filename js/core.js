@@ -532,13 +532,90 @@
     return days.filter((d) => d.items.length).sort((a, b) => a.day - b.day);
   }
 
+
+  /* ---------- 預訂（機票、住宿、交通、票券） ---------- */
+  const BOOK_TYPES = {
+    flight: { label: '機票', icon: 'c_airport' }, hotel: { label: '住宿', icon: 'hotel' }, train: { label: '火車／高鐵', icon: 'c_station' },
+    bus: { label: '巴士', icon: 'bus' }, car: { label: '租車', icon: 'car' }, ticket: { label: '門票／活動', icon: 'ticket' },
+    restaurant: { label: '餐廳訂位', icon: 'c_food' }, other: { label: '其他', icon: 'text' },
+  };
+  const isDate = (x) => /^\d{4}-\d{2}-\d{2}$/.test(x || '');
+  const isTime = (x) => /^([01]\d|2[0-3]):[0-5]\d$/.test(x || '');
+  function sanitizeBooking(b) {
+    if (!b || typeof b !== 'object') return null;
+    const s2 = (v, n) => String(v == null ? '' : v).slice(0, n);
+    const out = {
+      id: /^[a-z0-9]{4,40}$/i.test(b.id || '') ? b.id : uid(), type: BOOK_TYPES[b.type] ? b.type : 'other',
+      title: s2(b.title, 120), date: isDate(b.date) ? b.date : '', time: isTime(b.time) ? b.time : '',
+      endDate: isDate(b.endDate) ? b.endDate : '', endTime: isTime(b.endTime) ? b.endTime : '',
+      from: s2(b.from, 80), to: s2(b.to, 80), code: s2(b.code, 60), note: s2(b.note, 1000),
+      cost: Number.isFinite(+b.cost) && +b.cost > 0 ? Math.min(1e9, +b.cost) : 0,
+      link: /^https:\/\/[^\s"'<>]+$/.test(b.link || '') ? s2(b.link, 500) : '',
+    };
+    return out.title || out.code || out.from ? out : null;
+  }
+  /** 某天要顯示的預訂：當天開始的，以及住宿的退房日 */
+  function bookingsOn(trip, iso) {
+    if (!iso) return [];
+    const out = [];
+    for (const b of trip.bookings || []) {
+      if (b.date === iso) out.push({ b, kind: b.type === 'hotel' ? 'in' : 'start' });
+      else if (b.type === 'hotel' && b.endDate === iso) out.push({ b, kind: 'out' });
+      else if (b.type === 'car' && b.endDate === iso) out.push({ b, kind: 'out' });
+    }
+    return out.sort((x, y) => ((x.kind === 'out' ? x.b.endTime : x.b.time) || '99').localeCompare((y.kind === 'out' ? y.b.endTime : y.b.time) || '99'));
+  }
+
+  /* ---------- 分帳 ---------- */
+  function sanitizeExpense(e, members) {
+    if (!e || typeof e !== 'object') return null;
+    const amount = +e.amount;
+    if (!Number.isFinite(amount) || amount <= 0) return null;
+    const split = (Array.isArray(e.split) ? e.split : []).filter((n) => members.includes(n));
+    return {
+      id: /^[a-z0-9]{4,40}$/i.test(e.id || '') ? e.id : uid(), title: String(e.title || '').slice(0, 80) || '支出',
+      amount: Math.min(1e9, Math.round(amount * 100) / 100), payer: members.includes(e.payer) ? e.payer : members[0],
+      split: split.length ? split : members.slice(), date: isDate(e.date) ? e.date : '',
+    };
+  }
+  /** 算每人淨額，並用「最大債務人配最大債權人」得出最少轉帳 */
+  function settle(members, expenses) {
+    const bal = Object.fromEntries(members.map((m) => [m, 0]));
+    const paid = Object.fromEntries(members.map((m) => [m, 0]));
+    const share = Object.fromEntries(members.map((m) => [m, 0]));
+    for (const e of expenses) {
+      if (!(e.payer in bal)) continue;
+      const who = e.split.filter((n) => n in bal);
+      if (!who.length) continue;
+      // 以分（0.01）為單位平均分攤，餘數給前幾個人，總和不會差
+      const cents = Math.round(e.amount * 100), per = Math.floor(cents / who.length);
+      let rem = cents - per * who.length;
+      paid[e.payer] += cents;
+      who.forEach((n) => { const c = per + (rem > 0 ? 1 : 0); if (rem > 0) rem--; share[n] += c; });
+    }
+    members.forEach((m) => { bal[m] = paid[m] - share[m]; });
+    const cred = members.filter((m) => bal[m] > 0).map((m) => [m, bal[m]]).sort((a, b) => b[1] - a[1]);
+    const debt = members.filter((m) => bal[m] < 0).map((m) => [m, -bal[m]]).sort((a, b) => b[1] - a[1]);
+    const transfers = [];
+    let i = 0, j = 0;
+    while (i < debt.length && j < cred.length) {
+      const x = Math.min(debt[i][1], cred[j][1]);
+      if (x > 0) transfers.push({ from: debt[i][0], to: cred[j][0], amount: x / 100 });
+      debt[i][1] -= x; cred[j][1] -= x;
+      if (debt[i][1] === 0) i++;
+      if (cred[j][1] === 0) j++;
+    }
+    const f = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v / 100]));
+    return { paid: f(paid), share: f(share), balance: f(bal), transfers, total: Object.values(paid).reduce((a, b) => a + b, 0) / 100 };
+  }
+
   /* ---------- 行程資料 ---------- */
   const PALETTE = ['#b0533b', '#3f6e78', '#6b7a35', '#7d4f7a', '#b4862f', '#9a4558', '#3c5a86', '#5f7f68', '#8a6a4b', '#6e6a5c'];
   const THEMES = ['auto', 'clean', 'night', 'parchment', 'relic', 'neon', 'washi', 'tide'];
   const dayColor = (d) => (d > 0 ? PALETTE[(d - 1) % PALETTE.length] : '#8a8370');
 
   function newTrip(name) {
-    return { id: uid(), name: name || '我的旅程', days: 3, startDate: '', dayStart: '09:00', theme: 'auto', currency: '', base: null, places: [], legModes: {}, checklist: [], updatedAt: Date.now() };
+    return { id: uid(), name: name || '我的旅程', days: 3, startDate: '', dayStart: '09:00', theme: 'auto', currency: '', base: null, places: [], legModes: {}, checklist: [], bookings: [], members: ['我'], expenses: [], updatedAt: Date.now() };
   }
 
   function sanitizePlace(p) {
@@ -583,6 +660,11 @@
     out.currency = String(t.currency || '').replace(/[^A-Za-z$¥€£₩NT]/g, '').slice(0, 5);
     out.checklist = (Array.isArray(t.checklist) ? t.checklist : []).filter((c) => c && typeof c.t === 'string').slice(0, 300)
       .map((c) => ({ t: c.t.slice(0, 200), done: !!c.done, g: String(c.g || '').slice(0, 30) }));
+    out.bookings = (Array.isArray(t.bookings) ? t.bookings : []).map(sanitizeBooking).filter(Boolean).slice(0, 300);
+    const mem = (Array.isArray(t.members) ? t.members : []).map((m) => String(m || '').trim().slice(0, 20)).filter(Boolean);
+    out.members = [...new Set(mem)].slice(0, 20);
+    if (!out.members.length) out.members = ['我'];
+    out.expenses = (Array.isArray(t.expenses) ? t.expenses : []).map((e) => sanitizeExpense(e, out.members)).filter(Boolean).slice(0, 2000);
     out.updatedAt = +t.updatedAt || Date.now();
     return out;
   }
@@ -1041,6 +1123,9 @@
       p: t.places.map((p) => [p.name, +p.lat.toFixed(6), +p.lng.toFixed(6), p.day, p.order, p.note || 0, p.locked ? 1 : 0, p.stay === 60 ? 0 : p.stay, p.url && p.url.length < 300 ? p.url : 0, p.cat || 0, p.hours || 0, p.cost || 0, p.done ? 1 : 0, p.hoursWeek || 0, p.photo && p.photo.src === 'wiki' ? [p.photo.url, p.photo.link] : 0]),
       th: t.theme && t.theme !== 'auto' ? t.theme : undefined, cu: t.currency || undefined,
       cl: t.checklist && t.checklist.length ? t.checklist.map((c) => [c.t, c.done ? 1 : 0, c.g || 0]) : undefined,
+      bk: t.bookings && t.bookings.length ? t.bookings.map((b) => { const o = {}; for (const [k, v] of Object.entries(b)) if (v && k !== 'id') o[k] = v; return o; }) : undefined,
+      mb: t.members && (t.members.length > 1 || t.members[0] !== '我') ? t.members : undefined,
+      ex: t.expenses && t.expenses.length ? t.expenses.map((e) => [e.title, e.amount, e.payer, e.split.length === t.members.length ? 0 : e.split, e.date || 0]) : undefined,
       m: packModes(t),
     };
   }
@@ -1059,6 +1144,9 @@
     const t = newTrip(o.n);
     t.days = o.d; t.startDate = o.s || ''; t.dayStart = o.h || '09:00'; t.theme = o.th || 'auto'; t.currency = o.cu || '';
     t.checklist = (o.cl || []).map((c) => ({ t: c[0], done: !!c[1], g: c[2] || '' }));
+    t.bookings = o.bk || [];
+    t.members = o.mb || ['我'];
+    t.expenses = (o.ex || []).map((e) => ({ title: e[0], amount: e[1], payer: e[2], split: e[3] || t.members.slice(), date: e[4] || '' }));
     if (o.b) t.base = { name: o.b[0], lat: o.b[1], lng: o.b[2] };
     if (o.db) t.dayBase = Object.fromEntries(Object.entries(o.db).map(([d, v]) => [d, { name: v[0], lat: v[1], lng: v[2] }]));
     const idMap = [];
@@ -1080,6 +1168,6 @@
     parseGeoJSON, parseTakeoutCSV, parseKML, newTrip, sanitizeTrip, sanitizePlace, mergePlaces,
     MODES, estimateLeg, suggestMode, gmapsDirUrl, gmapsPlaceUrl, gmapsDayUrl, appleDirUrl, applePlaceUrl, timeline, hm, toMin, centroid, balancedClusters,
     orderStops, planDays, pathLen, dayStops, legKey, parseOsrm, decodePolyline, parseGoogleRoute,
-    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, CAT_COLOR, parseItineraryText, cleanPlaceName, wikiPick, wikiLangs, PHOTO_GEO_CATS, sanitizePhoto, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel,
+    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, CAT_COLOR, BOOK_TYPES, sanitizeBooking, bookingsOn, sanitizeExpense, settle, parseItineraryText, cleanPlaceName, wikiPick, wikiLangs, PHOTO_GEO_CATS, sanitizePhoto, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel,
   };
 });

@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.10.0';
+  const VERSION = '1.11.0';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -365,8 +365,8 @@
     h += sec('// Route · 每日路線') + '<div class="row gap route-bar"><div class="chips grow">' + '<button class="chip' + (f ? '' : ' on') + '" data-act="filter" data-d="0"><span class="en">ALL</span><span class="zh">全部</span></button>' +
       range(t.days).map((d) => '<button class="chip' + (f === d ? ' on' : '') + '" data-act="filter" data-d="' + d + '" style="--c:' + dc(d) + '"><span class="en">D' + String(d).padStart(2, '0') + '</span><span class="zh">第 ' + d + ' 天</span></button>').join('') + '</div>' +
       '<button class="btn sm' + (S.ui.reorder ? ' primary' : '') + '" data-act="reorder">' + I('swap') + (S.ui.reorder ? ' 完成' : ' 調整順序') + '</button></div>';
-    const total = t.places.reduce((a, p) => a + (p.cost || 0), 0);
-    if (total) h += '<div class="muted small">' + I('money') + ' 預估總花費 ' + (t.currency ? esc(t.currency) + ' ' : '') + fmtMoney(total) + '</div>';
+    const pcost = t.places.reduce((a, p) => a + (p.cost || 0), 0), bcost = (t.bookings || []).reduce((a, b) => a + (b.cost || 0), 0);
+    if (pcost + bcost) h += '<div class="muted small">' + I('money') + ' 預估總花費 ' + (t.currency ? esc(t.currency) + ' ' : '') + fmtMoney(pcost + bcost) + (bcost ? '（含預訂 ' + fmtMoney(bcost) + '）' : '') + '</div>';
     const days = f ? [f] : range(t.days);
     const big = t.places.length > 120 && !f;
     S.ui.open = S.ui.open || {};
@@ -398,7 +398,7 @@
       (seq.length >= 2 ? '<span class="day-tools"><a class="btn sm ghost" target="_blank" rel="noopener" href="' + esc(C.gmapsDayUrl(seq, mainMode)) + '" title="整天路線在 Google 地圖開啟（Apple 地圖不支援多個中途點）">' + I('nav') + ' 整天導航</a></span>' : '') +
       weatherChip(t, d) +
       '<span class="muted">' + stops.length + ' 站' + (stops.length ? ' · ' + C.hm(C.toMin(t.dayStart)) + '–' + C.hm(tl.end) + ' · 移動 ' + (est ? '約 ' : '') + C.fmtDur(move) + ' · ' + C.fmtDist(dist) + ' · 停留 ' + C.fmtDur(stay) : '') +
-      (dayCost(stops) ? ' · 花費 ' + (t.currency ? esc(t.currency) + ' ' : '') + fmtMoney(dayCost(stops)) : '') + '</span></div>';
+      (dayCost(stops) ? ' · 花費 ' + (t.currency ? esc(t.currency) + ' ' : '') + fmtMoney(dayCost(stops)) : '') + '</span>' + dayBookings(t, d) + '</div>';
     if (!stops.length) return h + '<div class="empty sm">這天沒有安排</div></div>';
     let li = 0;
     if (hasB) h += baseRow(ends.start, C.hm(C.toMin(t.dayStart)) + ' 出發', d > 1 && ends.start !== ends.end ? '退房' : '') + legRow(t, infos[li++]);
@@ -857,6 +857,112 @@
     S.ui.lastIcs = ics;
   }
 
+  /* ================= 預訂 ================= */
+  const curr = () => (trip().currency ? esc(trip().currency) + ' ' : '');
+  function bookingWhen(b) {
+    const d = (x) => { if (!x) return ''; const dt = new Date(x + 'T00:00:00'); return (dt.getMonth() + 1) + '/' + dt.getDate() + '（' + WEEK[dt.getDay()] + '）'; };
+    let w = d(b.date) + (b.time ? ' ' + b.time : '');
+    if (b.endDate || b.endTime) w += ' → ' + (b.endDate && b.endDate !== b.date ? d(b.endDate) + ' ' : '') + (b.endTime || '');
+    return w || '未設定日期';
+  }
+  function renderBookings() {
+    const t = trip();
+    let h = sec('// Bookings · 機票、住宿、交通、票券');
+    if (!t.bookings.length) h += '<div class="empty sm">還沒有預訂。把機票、飯店、車票、門票的時間和確認碼記在這裡，會自動出現在當天的行程裡。</div>';
+    const list = t.bookings.slice().sort((a, b) => ((a.date || '9') + (a.time || '')).localeCompare((b.date || '9') + (b.time || '')));
+    h += list.map((b) => {
+      const ty = C.BOOK_TYPES[b.type];
+      return '<div class="bk"><span class="bk-ic">' + I(ty.icon) + '</span><span class="grow"><b>' + esc(b.title || ty.label) + '</b>' +
+        '<br><span class="time">' + esc(bookingWhen(b)) + '</span>' + (b.from || b.to ? '<br><span class="muted">' + esc(b.from) + (b.from && b.to ? ' → ' : '') + esc(b.to) + '</span>' : '') +
+        (b.code ? '<br><span class="bk-code">確認碼 <b>' + esc(b.code) + '</b> <button class="linkbtn" data-act="copyCode" data-code="' + esc(b.code) + '">' + I('copy') + '</button></span>' : '') +
+        (b.cost ? '<br><span class="muted">' + curr() + fmtMoney(b.cost) + '</span>' : '') +
+        (b.note ? '<br><span class="muted">' + esc(b.note.slice(0, 120)) + '</span>' : '') + '</span>' +
+        (b.link ? '<a class="icon-btn sm" href="' + esc(b.link) + '" target="_blank" rel="noopener" title="開啟連結">' + I('ext') + '</a>' : '') +
+        '<button class="icon-btn sm" data-act="bkEdit" data-id="' + b.id + '">' + I('edit') + '</button></div>';
+    }).join('');
+    h += '<button class="btn primary block" data-act="bkEdit" data-id="">' + I('add') + ' 新增預訂</button>';
+    const tot = t.bookings.reduce((a, b) => a + (b.cost || 0), 0);
+    if (tot) h += '<div class="muted small">' + I('money') + ' 預訂合計 ' + curr() + fmtMoney(tot) + '</div>';
+    return h;
+  }
+  function bookingModal(id) {
+    const t = trip();
+    const b = t.bookings.find((x) => x.id === id) || { type: 'flight', date: t.startDate || '' };
+    const f = (k, label, type, ph) => '<label class="lbl">' + label + '</label><input id="bk_' + k + '" type="' + (type || 'text') + '" value="' + esc(b[k] || '') + '" placeholder="' + (ph || '') + '">';
+    openModal('<h3>' + (id ? '編輯預訂' : '新增預訂') + '</h3>' +
+      '<div class="catpick" id="bkType">' + Object.entries(C.BOOK_TYPES).map(([k, v]) => '<button type="button" class="catopt' + (b.type === k ? ' on' : '') + '" data-cat="' + k + '">' + I(v.icon) + '<small>' + v.label + '</small></button>').join('') + '</div>' +
+      f('title', '名稱', 'text', '例：BR198 桃園→成田、新宿華盛頓飯店') +
+      '<div class="row gap"><div class="grow">' + f('date', '開始日期', 'date') + '</div><div style="width:120px">' + f('time', '時間', 'time') + '</div></div>' +
+      '<div class="row gap"><div class="grow">' + f('endDate', '結束日期（住宿退房、還車）', 'date') + '</div><div style="width:120px">' + f('endTime', '時間', 'time') + '</div></div>' +
+      '<div class="row gap"><div class="grow">' + f('from', '出發地', 'text', '桃園 T2') + '</div><div class="grow">' + f('to', '目的地', 'text', '成田 T1') + '</div></div>' +
+      f('code', '確認碼／訂位代號', 'text', 'ABC123') +
+      '<div class="row gap"><div class="grow">' + f('cost', '金額' + (t.currency ? '（' + esc(t.currency) + '）' : ''), 'number') + '</div></div>' +
+      f('link', '連結（訂單頁、電子票）', 'url', 'https://') +
+      '<label class="lbl">備註</label><textarea id="bk_note" rows="2">' + esc(b.note || '') + '</textarea>' +
+      '<div class="row gap end">' + (id ? '<button class="btn danger" data-mact="del">' + I('trash') + ' 刪除</button><span class="grow"></span>' : '') + '<button class="btn" data-mact="close">取消</button><button class="btn primary" data-mact="ok">儲存</button></div>', {
+      ok: () => {
+        const sel = $('#bkType .catopt.on');
+        const nb = C.sanitizeBooking({ id: id || undefined, type: sel ? sel.dataset.cat : 'other', title: $('#bk_title').value, date: $('#bk_date').value, time: $('#bk_time').value,
+          endDate: $('#bk_endDate').value, endTime: $('#bk_endTime').value, from: $('#bk_from').value, to: $('#bk_to').value, code: $('#bk_code').value,
+          cost: $('#bk_cost').value, link: $('#bk_link').value.trim(), note: $('#bk_note').value });
+        if (!nb) { $('#bk_title').focus(); toast('請至少填名稱'); return; }
+        snapshot();
+        const i = t.bookings.findIndex((x) => x.id === id);
+        if (i >= 0) t.bookings[i] = nb; else t.bookings.push(nb);
+        let msg = '';
+        if (!t.startDate && nb.date) { t.startDate = nb.date; msg = '旅程還沒設出發日，已設為 ' + nb.date + '（可在「行程」修改）'; }
+        closeModal(); save(); renderPanel(true);
+        if (msg) toast(msg, 6000);
+      },
+      del: () => { snapshot(); t.bookings = t.bookings.filter((x) => x.id !== id); closeModal(); save(); renderPanel(true); toast('已刪除預訂', 5000, undoAct); },
+    });
+  }
+  /** 每天標題下方顯示當天的預訂 */
+  function dayBookings(t, d) {
+    const list = C.bookingsOn(t, dayISO(t, d));
+    if (!list.length) return '';
+    return '<div class="day-bk">' + list.map(({ b, kind }) => '<button class="bkchip" data-act="bkOpen" data-id="' + b.id + '">' + I(C.BOOK_TYPES[b.type].icon) +
+      '<span>' + esc((kind === 'out' ? b.endTime : b.time) || '') + ' ' + (kind === 'in' ? '入住 ' : kind === 'out' ? (b.type === 'hotel' ? '退房 ' : '還車 ') : '') + esc(b.title || C.BOOK_TYPES[b.type].label) + '</span></button>').join('') + '</div>';
+  }
+
+  /* ================= 分帳 ================= */
+  function renderSplit() {
+    const t = trip();
+    const r = C.settle(t.members, t.expenses);
+    let h = sec('// Members · 旅伴') + '<div class="chips catchips">' + t.members.map((m) => '<span class="chip member">' + esc(m) + (t.members.length > 1 ? ' <button class="linkbtn" data-act="memDel" data-name="' + esc(m) + '" title="移除">' + I('close') + '</button>' : '') + '</span>').join('') + '</div>' +
+      '<div class="row gap"><input id="memInput" placeholder="新增旅伴名字" maxlength="20" class="grow"><button class="btn" data-act="memAdd">' + I('add') + ' 加入</button></div>';
+    h += sec('// Expense · 記一筆') +
+      '<div class="row gap"><input id="exTitle" placeholder="項目，例：晚餐" class="grow" maxlength="80"><input id="exAmount" type="number" inputmode="decimal" placeholder="金額" style="width:110px"></div>' +
+      '<div class="row gap" style="margin-top:8px"><label class="field grow">誰付的 <select id="exPayer">' + t.members.map((m) => '<option>' + esc(m) + '</option>').join('') + '</select></label></div>' +
+      '<div class="lbl">誰要分（預設全部）</div><div class="chips catchips" id="exSplit">' + t.members.map((m) => '<label class="chip member pick"><input type="checkbox" checked value="' + esc(m) + '"> ' + esc(m) + '</label>').join('') + '</div>' +
+      '<button class="btn primary block" data-act="exAdd">' + I('add') + ' 記一筆</button>';
+    if (t.expenses.length) {
+      h += sec('// Settle · 結算') + '<div class="settle">' +
+        '<div class="muted small">總支出 ' + curr() + fmtMoney2(r.total) + '</div>' +
+        t.members.map((m) => '<div class="srow"><b>' + esc(m) + '</b><span class="muted">付 ' + fmtMoney2(r.paid[m]) + '・分攤 ' + fmtMoney2(r.share[m]) + '</span><span class="' + (r.balance[m] >= 0 ? 'pos' : 'neg') + '">' + (r.balance[m] >= 0 ? '+' : '−') + fmtMoney2(Math.abs(r.balance[m])) + '</span></div>').join('') +
+        (r.transfers.length ? '<div class="lbl">怎麼還最省事</div>' + r.transfers.map((x) => '<div class="xfer"><b>' + esc(x.from) + '</b> ' + I('next') + ' <b>' + esc(x.to) + '</b><span class="grow"></span><b>' + curr() + fmtMoney2(x.amount) + '</b></div>').join('') : '<div class="muted small">' + I('check') + ' 已經結清</div>') + '</div>';
+      h += sec('// History · 明細') + t.expenses.slice().reverse().map((e) => '<div class="clitem"><span class="grow"><b>' + esc(e.title) + '</b> <span class="muted">' + esc(e.payer) + ' 付' + (e.split.length < t.members.length ? '・' + e.split.map(esc).join('、') + ' 分' : '・全部分') + '</span></span><b>' + curr() + fmtMoney2(e.amount) + '</b><button class="icon-btn sm ghost-btn" data-act="exDel" data-id="' + e.id + '" title="刪除">' + I('close') + '</button></div>').join('');
+      h += '<button class="btn block" data-act="exShare">' + I('text') + ' 複製結算文字（貼到 LINE）</button>';
+    }
+    return h;
+  }
+  const fmtMoney2 = (n) => (Math.round(n * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
+  function exAdd() {
+    const t = trip();
+    const amt = parseFloat($('#exAmount').value);
+    if (!Number.isFinite(amt) || amt <= 0) { $('#exAmount').focus(); toast('請輸入金額'); return; }
+    const split = [...document.querySelectorAll('#exSplit input:checked')].map((x) => x.value);
+    const e = C.sanitizeExpense({ title: $('#exTitle').value.trim() || '支出', amount: amt, payer: $('#exPayer').value, split, date: new Date().toISOString().slice(0, 10) }, t.members);
+    t.expenses.push(e); save(); renderPanel(true); toast('已記一筆：' + e.title + ' ' + curr() + fmtMoney2(e.amount));
+  }
+  function settleText(t) {
+    const r = C.settle(t.members, t.expenses);
+    const c = t.currency ? t.currency + ' ' : '';
+    return ['💰 ' + t.name + ' 分帳', '總支出 ' + c + fmtMoney2(r.total), ''].concat(
+      t.members.map((m) => m + '：付 ' + fmtMoney2(r.paid[m]) + '，分攤 ' + fmtMoney2(r.share[m])), '',
+      r.transfers.length ? r.transfers.map((x) => x.from + ' → ' + x.to + ' ' + c + fmtMoney2(x.amount)) : ['已經結清 ✅']).join('\n');
+  }
+
   /* ================= 行前清單 ================= */
   const CL_TEMPLATE = {
     '證件': ['護照（效期 6 個月以上）', '機票／登機證', '住宿確認信', '旅遊保險資料', '駕照與國際駕照（要開車才需要）'],
@@ -866,6 +972,14 @@
     '其他': ['常備藥品', '盥洗用品', '環保袋', '筆（填入境卡）'],
   };
   function renderList() {
+    const t = trip();
+    const seg = S.ui.listSeg || 'book';
+    const done = (t.checklist || []).filter((c) => c.done).length;
+    const bar = '<div class="segbar">' + [['book', I('ticket') + ' 預訂 ' + (t.bookings.length || '')], ['split', I('users') + ' 分帳'], ['pack', I('list') + ' 行李 ' + (t.checklist.length ? done + '/' + t.checklist.length : '')]]
+      .map(([k, l]) => '<button class="' + (seg === k ? 'on' : '') + '" data-act="listSeg" data-k="' + k + '">' + l + '</button>').join('') + '</div>';
+    return bar + (seg === 'book' ? renderBookings() : seg === 'split' ? renderSplit() : renderPack());
+  }
+  function renderPack() {
     const t = trip();
     const items = t.checklist || [];
     const done = items.filter((c) => c.done).length;
@@ -1628,6 +1742,15 @@
         case 'catFilter': S.ui.catFilter = el.dataset.c; renderPanel(true); break;
         case 'gotoToday': S.ui.dayFilter = +el.dataset.d; renderPanel(true); renderMap(true); break;
         case 'clAdd': clAdd(); break;
+        case 'listSeg': S.ui.listSeg = el.dataset.k; renderPanel(); break;
+        case 'bkEdit': bookingModal(el.dataset.id); break;
+        case 'bkOpen': S.ui.listSeg = 'book'; switchTab('list'); setTimeout(() => bookingModal(el.dataset.id), 50); break;
+        case 'copyCode': copyText(el.dataset.code); break;
+        case 'memAdd': { const v = ($('#memInput').value || '').trim().slice(0, 20); if (v && !t.members.includes(v) && t.members.length < 20) { t.members.push(v); save(); renderPanel(true); const mi = $('#memInput'); if (mi) mi.focus(); } break; }
+        case 'memDel': { const n = el.dataset.name; if (t.expenses.some((e) => e.payer === n || e.split.includes(n))) { modalMsg('無法移除', esc(n) + ' 已經有支出紀錄，請先刪除相關的帳。'); break; } t.members = t.members.filter((m) => m !== n); save(); renderPanel(true); break; }
+        case 'exAdd': exAdd(); break;
+        case 'exDel': { snapshot(); t.expenses = t.expenses.filter((e) => e.id !== el.dataset.id); save(); renderPanel(true); toast('已刪除', 4000, undoAct); break; }
+        case 'exShare': copyText(settleText(t)); break;
         case 'clToggle': { const c = t.checklist[+el.dataset.i]; if (c) { c.done = !c.done; save(); renderPanel(true); } break; }
         case 'clDel': { snapshot(); t.checklist.splice(+el.dataset.i, 1); save(); renderPanel(true); toast('已刪除', 4000, undoAct); break; }
         case 'clTemplate': clTemplate(); break;
@@ -1655,6 +1778,8 @@
     $('#tabBody').addEventListener('keydown', (e) => {
       if (e.target.id === 'addInput' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleAddInput();
       if ((e.target.id === 'clInput' || e.target.id === 'clGroup') && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); clAdd(); }
+      if (e.target.id === 'memInput' && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); document.querySelector('[data-act=memAdd]').click(); }
+      if ((e.target.id === 'exAmount' || e.target.id === 'exTitle') && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); exAdd(); }
     });
   }
 
