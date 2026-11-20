@@ -62,11 +62,11 @@ body.picking #map { cursor: crosshair; }
 .pin { position: relative; width: 32px; height: 32px; border-radius: 50%; background: var(--c); border: 2px solid #f6f1e2; box-shadow: 0 2px 6px rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; }
 .pin::before { content: ""; position: absolute; left: 50%; bottom: -8px; width: 0; height: 0; margin-left: -6px; border: 6px solid transparent; border-top: 7px solid #f6f1e2; border-bottom: 0; }
 .pin::after { content: ""; position: absolute; left: 50%; bottom: -4.5px; width: 0; height: 0; margin-left: -4px; border: 4px solid transparent; border-top: 5px solid var(--c); border-bottom: 0; }
-.pin span { display: flex; align-items: center; justify-content: center; color: #fff; font: 700 12px/1 var(--mono); }
-.pin .ic { width: 19px; height: 19px; color: #fff; stroke-width: 2.1; }
+.pin span { position: absolute; inset: 0; color: #fff; font: 700 12px/1 var(--mono); }
+.pin .ic { position: absolute; left: 50%; top: 50%; width: 20px; height: 20px; margin: -10px 0 0 -10px; color: #fff; stroke-width: 2; vertical-align: top; }
 .pin.dim { opacity: .3; }
 .pin.base { border-radius: 7px; background: #2f2c25; --c: #2f2c25; }
-.pin.base .ic { width: 18px; height: 18px; }
+.pin.base .ic { width: 18px; height: 18px; margin: -9px 0 0 -9px; }
 .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--card); color: var(--ink); border-radius: 0; box-shadow: 0 3px 14px rgba(0,0,0,.3); }
 .leaflet-popup-content-wrapper { border: 1px solid var(--line); }
 .leaflet-popup-content { margin: 12px 14px; font-family: var(--sans); }
