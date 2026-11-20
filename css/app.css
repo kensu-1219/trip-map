@@ -454,3 +454,10 @@ html[data-style="modern"] .pop-photo { border-radius: 16px 16px 0 0; }
 .itin-item { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
 .itin-item input[type=checkbox] { width: 20px; min-height: 20px; flex: none; accent-color: var(--pri); }
 .itin-item input[type=text] { min-height: 34px; padding: 4px 8px; }
+
+/* 地圖 ⇄ 清單連動 */
+.leaflet-marker-icon.hl .pin { transform: scale(1.28); transform-origin: 50% 100%; box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 35%, transparent), 0 4px 12px rgba(0,0,0,.35); }
+.pin { transition: transform .18s ease, box-shadow .18s ease; }
+.stop.active { background: color-mix(in srgb, var(--pri) 7%, transparent); border-radius: 10px; }
+@keyframes flashRow { 0% { background: color-mix(in srgb, var(--pri) 28%, transparent); } 100% { background: transparent; } }
+.stop.flash { animation: flashRow 1.2s ease; border-radius: 10px; }

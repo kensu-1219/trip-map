@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.9.0';
+  const VERSION = '1.10.0';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -117,9 +117,11 @@
         html: '<svg viewBox="0 0 14 14" style="transform:rotate(' + ang.toFixed(1) + 'deg)"><path d="M3 2.5L10 7L3 11.5" fill="none" stroke="' + col + '" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' }) }).addTo(routeLayer);
   }
 
+  const markers = {};
   function renderMap(fit) {
     const t = trip();
     markerLayer.clearLayers();
+    for (const k in markers) delete markers[k];
     const f = S.ui.dayFilter;
     const visible = t.places.filter((p) => !f || p.day === f);
     const dim = (p) => f && p.day !== f;
@@ -130,8 +132,11 @@
       const m = L.marker([p.lat, p.lng], { icon: pinIcon(C.CAT_COLOR[p.cat] || C.CAT_COLOR.other, '', cls, catIc(p.cat)), title: p.name, zIndexOffset: dim(p) ? -100 : 0 });
       m.bindPopup(() => popupHtml(p), { maxWidth: 260 });
       if (!dim(p) && t.places.length <= 300) m.bindTooltip((num ? '<b style="--lc:' + dc(p.day) + '">' + num + '</b>' : '') + esc(p.name.length > 14 ? p.name.slice(0, 13) + '…' : p.name), { permanent: true, direction: 'right', offset: [16, -18], className: 'plabel' });
+      m.on('click', () => syncListTo(p.id));
+      markers[p.id] = m;
       m.addTo(markerLayer);
     }
+    if (hlId && markers[hlId]) highlightMarker(hlId, false);
     for (const h of hotels(t)) {
       L.marker([h.lat, h.lng], { icon: pinIcon('#2f2c25', '', 'base', I('hotel')), title: h.name, zIndexOffset: 500 })
         .bindPopup(() => popupHtml(h)).addTo(markerLayer);
@@ -139,6 +144,57 @@
     drawRoutes();
     if (fit) fitTo(visible.length ? visible.concat(f ? [C.dayEnds(t, f).start, C.dayEnds(t, f).end].filter(Boolean) : hotels(t)) : allPoints(t));
   }
+  /* ---------- 地圖 ⇄ 清單連動 ---------- */
+  let hlId = '';
+  function highlightMarker(id, pan) {
+    if (hlId && markers[hlId] && hlId !== id) {
+      const el = markers[hlId].getElement(); if (el) el.classList.remove('hl');
+      markers[hlId].setZIndexOffset(0);
+    }
+    hlId = id;
+    const m = markers[id]; if (!m) return;
+    const el = m.getElement(); if (el) el.classList.add('hl');
+    m.setZIndexOffset(1000);
+    if (pan) {
+      // 標記不在「地圖可見區」（扣掉底部面板）時才移動
+      const pt = map.latLngToContainerPoint(m.getLatLng()), size = map.getSize(), pad = 40;
+      const bottom = size.y - sheetPad();
+      if (pt.x < pad || pt.x > size.x - pad || pt.y < pad || pt.y > bottom - pad) {
+        map.panBy(pt.subtract(L.point(size.x / 2, bottom / 2)), { animate: true, duration: 0.35 });
+      }
+    }
+  }
+  /** 點地圖標記 → 清單捲到那張卡片 */
+  function syncListTo(id) {
+    if (S.ui.tab !== 'plan' && S.ui.tab !== 'places') return;
+    if (isMobile() && $('#panel').classList.contains('mini')) return;
+    const row = $('#tabBody .stop[data-id="' + id + '"]');
+    if (!row) return;
+    S.ui.syncLock = Date.now();
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash');
+    highlightMarker(id, false);
+  }
+  function bindListSync() {
+    const body = $('#tabBody');
+    let tm = null;
+    body.addEventListener('scroll', () => {
+      if (S.ui.tab !== 'plan' && S.ui.tab !== 'places') return;
+      if (S.ui.syncLock && Date.now() - S.ui.syncLock < 900) return; // 剛剛是程式捲動
+      clearTimeout(tm);
+      tm = setTimeout(() => {
+        const top = body.getBoundingClientRect().top + 8;
+        const rows = body.querySelectorAll('.stop[data-id]');
+        let pick = null;
+        for (const r of rows) { const b = r.getBoundingClientRect(); if (b.bottom > top + 12) { pick = r; break; } }
+        body.querySelectorAll('.stop.active').forEach((r) => r.classList.remove('active'));
+        if (!pick) return;
+        pick.classList.add('active');
+        highlightMarker(pick.dataset.id, true);
+      }, 140);
+    }, { passive: true });
+  }
+
   /** 只重畫路線（縮放、路線結果回來時用；不會關掉打開中的地點視窗） */
   function drawRoutes() {
     const t = trip(), f = S.ui.dayFilter;
@@ -1495,6 +1551,7 @@
     bindSheetDrag();
     bindStopDrag();
     bindNavLinks();
+    bindListSync();
     $('#tripSelect').addEventListener('change', (e) => {
       if (e.target.value === '__new') { renderTripSelect(); askText('新旅程', '旅程名稱', '', (name) => { const n = C.newTrip(name || '新旅程'); S.data.trips.push(n); S.data.current = n.id; save(); renderAll(true); }); return; }
       S.data.current = e.target.value; S.ui.dayFilter = todayIndex(trip()) || 0; S.ui.measure = { a: '', b: '' }; S.ui.catFilter = ''; save({ silent: true }); renderAll(true);
