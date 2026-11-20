@@ -461,6 +461,77 @@
     return null;
   }
 
+
+  /* ---------- 貼上文字行程（ChatGPT／部落格）→ 每天的地點 ---------- */
+  const CN_NUM = { 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+  function cnToInt(x) {
+    if (/^\d+$/.test(x)) return +x;
+    if (x.length === 1) return CN_NUM[x] || 0;
+    if (x[0] === '十') return 10 + (CN_NUM[x[1]] || 0);
+    if (x[1] === '十') return (CN_NUM[x[0]] || 0) * 10 + (CN_NUM[x[2]] || 0);
+    return 0;
+  }
+  const DAY_RE = /^[\s#>*_\-–—|]*(?:(?:day|d)\s*0?(\d{1,2})|第\s*([一二兩三四五六七八九十\d]{1,3})\s*[天日]|([一二兩三四五六七八九十]{1,3})日目|(\d{1,2})日目)(?![\d])\s*[:：.、\-–—)）]?\s*(.*)$/i;
+  // 開頭的時間／時段標籤：「09:00」「上午：」「午餐：」「Morning:」「1.」「•」
+  const LEAD_RE = /^(?:[\s>*•·・●○◆◇▪■□※\-–—+]|\d{1,2}[.)、]\s|[（(]?\d{1,2}[:：]\d{2}\s*(?:[ap]\.?m\.?)?(?:\s*[-–~〜至]\s*\d{1,2}[:：]\d{2}\s*(?:[ap]\.?m\.?)?)?[)）]?\s*[:：\-–—]?\s*|(?:早上|上午|中午|下午|傍晚|晚上|晚餐|午餐|早餐|宵夜|點心|下午茶|住宿|入住|夜晚|清晨|凌晨|全天|morning|afternoon|evening|night|lunch|dinner|breakfast|brunch|stay|hotel)\s*[:：\-–—]?\s*)+/i;
+  const VERB_RE = /^(?:(?:參觀|参观|前往|抵達|抵达|到達|逛逛|遊覽|游览|造訪|拜訪|漫步|散步|欣賞|體驗|品嚐|品嘗|享用|搭乘|入住|到|去|逛|吃|喝|在|於|搭|住)\s*|(?:check[- ]?in at|visit(?:ing)?|explore|head to|go to|stroll (?:through|around)|walk (?:through|around)|enjoy|try|have (?:lunch|dinner|breakfast) at|lunch at|dinner at|breakfast at|stop by|at|in)\s+)/i;
+  const SKIP_RE = /^(?:交通|tips?|小提醒|注意|備註|备注|預算|预算|費用|费用|建议|建議|note|budget|transport(?:ation)?|getting there|總結|总结|summary|行程概要|overview)\b|^(?:交通|小提醒|注意|備註|預算|費用|建議)/i;
+  function cleanPlaceName(line) {
+    let t = String(line).replace(/\*\*|__|`/g, '').trim();
+    // 粗體優先：「**淺草寺**：…」→ 淺草寺
+    const bold = String(line).match(/\*\*([^*]{2,40})\*\*/);
+    if (bold && !LEAD_RE.test(bold[1] + ' ')) t = bold[1];
+    t = t.replace(LEAD_RE, '').replace(VERB_RE, '').trim();
+    t = t.replace(LEAD_RE, '').replace(VERB_RE, '').trim();
+    // 去掉後面的說明：「淺草寺（雷門）- 早上人少」→ 淺草寺
+    t = t.split(/\s[-–—|]\s|[：:]|[（(]|，|,|。|；|;|\s→|→/)[0].trim();
+    // 英文後面的說明：「Fushimi Inari Shrine early to avoid crowds」
+    t = t.split(/\s(?:early|to|for|then|before|after|while|which|where|with|if|and then|around|at night|in the (?:morning|afternoon|evening))\s/i)[0].trim();
+    // 中文地名後面黏著的動作：「上野阿美橫丁逛街吃小吃」「築地場外市場吃海鮮早餐」
+    const act = t.search(/(?:逛街|逛逛|吃|喝|買|購物|用餐|散步|休息|拍照|看夜景|看景|體驗|享用|品嚐|品嘗|參拜|泡湯)/);
+    if (act >= 3) t = t.slice(0, act).trim();
+    t = t.replace(/[\s.。、]+$/, '').replace(/^(?:the)\s+/i, '');
+    return t;
+  }
+  function parseItineraryText(text) {
+    const lines = String(text || '').replace(/\r/g, '').split('\n');
+    const days = [];
+    let cur = null;
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      const m = line.match(DAY_RE);
+      if (m) {
+        const n = +(m[1] || m[4] || 0) || cnToInt(m[2] || m[3] || '');
+        if (n >= 1 && n <= 60) {
+          cur = { day: n, title: (m[5] || '').replace(/\*\*/g, '').trim(), items: [] };
+          days.push(cur);
+          // 標題同一行列出多個地點：「Day 1：淺草寺 → 晴空塔 → 上野」
+          const rest = (m[5] || '').replace(/\*\*/g, '');
+          if (/→|->|➜|、/.test(rest) && rest.length < 120) {
+            rest.split(/→|->|➜|、/).map(cleanPlaceName).filter((x) => x.length >= 2).forEach((name) => cur.items.push({ name, raw: rest }));
+            cur.title = '';
+          }
+          continue;
+        }
+      }
+      if (!cur) continue;
+      if (SKIP_RE.test(line.replace(/^[\s>*•·・\-–—#\d.)]+/, ''))) continue;
+      const isBullet = /^(?:[>*•·・●○◆◇▪■□※\-–—+]|\d{1,2}[.)、]|\d{1,2}[:：]\d{2}|[（(]\d{1,2}[:：])/.test(line) || LEAD_RE.test(line);
+      if (!isBullet && line.length > 40) continue; // 一般敘述段落
+      const parts = /→|->|➜/.test(line) ? line.split(/→|->|➜/) : [line];
+      for (const part of parts) {
+        const name = cleanPlaceName(part);
+        if (name.length < 2 || name.length > 40) continue;
+        if (/^(?:自由活動|休息|返回|回飯店|回到飯店|回酒店|飯店|酒店|機場|搭機|返程|出發|集合|free time|rest|return|back to (?:the )?hotel)$/i.test(name)) continue;
+        if (/^(?:回|返回|回到)(?:飯店|酒店|旅館|住宿|民宿)|^(?:return|head back|back) to (?:the )?(?:hotel|airport)/i.test(name)) continue;
+        if (cur.items.some((x) => x.name === name)) continue;
+        cur.items.push({ name, raw: line.slice(0, 120) });
+      }
+    }
+    return days.filter((d) => d.items.length).sort((a, b) => a.day - b.day);
+  }
+
   /* ---------- 行程資料 ---------- */
   const PALETTE = ['#b0533b', '#3f6e78', '#6b7a35', '#7d4f7a', '#b4862f', '#9a4558', '#3c5a86', '#5f7f68', '#8a6a4b', '#6e6a5c'];
   const THEMES = ['auto', 'clean', 'night', 'parchment', 'relic', 'neon', 'washi', 'tide'];
@@ -1009,6 +1080,6 @@
     parseGeoJSON, parseTakeoutCSV, parseKML, newTrip, sanitizeTrip, sanitizePlace, mergePlaces,
     MODES, estimateLeg, suggestMode, gmapsDirUrl, gmapsPlaceUrl, gmapsDayUrl, appleDirUrl, applePlaceUrl, timeline, hm, toMin, centroid, balancedClusters,
     orderStops, planDays, pathLen, dayStops, legKey, parseOsrm, decodePolyline, parseGoogleRoute,
-    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, CAT_COLOR, wikiPick, wikiLangs, PHOTO_GEO_CATS, sanitizePhoto, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel,
+    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, CAT_COLOR, parseItineraryText, cleanPlaceName, wikiPick, wikiLangs, PHOTO_GEO_CATS, sanitizePhoto, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel,
   };
 });

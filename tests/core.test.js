@@ -369,3 +369,21 @@ test('Apple 地圖連結：交通方式對應 dirflg', () => {
   assert.ok(C.appleDirUrl(a, b, 'bike').endsWith('dirflg=c'));
   assert.equal(C.applePlaceUrl(b), 'https://maps.apple.com/?ll=35.7101,139.8107&q=' + encodeURIComponent('東京晴空塔'));
 });
+
+test('貼文字變行程：ChatGPT 中文格式', () => {
+  const d = C.parseItineraryText(fs.readFileSync(path.join(__dirname, 'fixtures', 'chatgpt_zh.txt'), 'utf8'));
+  assert.deepEqual(d.map((x) => x.day), [1, 2, 3]);
+  assert.deepEqual(d[0].items.map((x) => x.name), ['淺草寺', '淺草今半', '東京晴空塔', '上野阿美橫丁']);
+  assert.deepEqual(d[1].items.map((x) => x.name), ['明治神宮', '原宿竹下通', '一蘭拉麵 澀谷店', '澀谷十字路口', 'SHIBUYA SKY']);
+  assert.deepEqual(d[2].items.map((x) => x.name), ['築地場外市場', 'teamLab Planets', '台場海濱公園']);
+  assert.ok(!d.some((x) => x.items.some((i) => /Suica|預算|回飯店/.test(i.name))), '小提醒、回飯店不算地點');
+});
+
+test('貼文字變行程：英文、同一行箭頭、第N天、日目', () => {
+  const d = C.parseItineraryText(fs.readFileSync(path.join(__dirname, 'fixtures', 'chatgpt_en.txt'), 'utf8'));
+  assert.deepEqual(d[0].items.map((x) => x.name), ['Fushimi Inari Shrine', 'Nishiki Market', 'Kiyomizu-dera Temple', 'Gion district']);
+  assert.deepEqual(d[1].items.map((x) => x.name), ['Arashiyama Bamboo Grove', 'Tenryu-ji Temple', 'Okochi Sanso Villa', 'Kinkaku-ji']);
+  const a = C.parseItineraryText('第一天：淺草寺 → 晴空塔 → 上野公園\n第二天\n・明治神宮\n・表參道\n3日目\n- 鎌倉大佛');
+  assert.deepEqual(a.map((x) => [x.day, x.items.map((i) => i.name)]), [[1, ['淺草寺', '晴空塔', '上野公園']], [2, ['明治神宮', '表參道']], [3, ['鎌倉大佛']]]);
+  assert.deepEqual(C.parseItineraryText('隨便一段沒有天數的文字'), []);
+});

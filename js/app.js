@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.8.0';
+  const VERSION = '1.9.0';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -481,7 +481,7 @@
 
   function renderAdd() {
     const geo = S.ui.geo;
-    let h = nearbyHtml() + sec('// Add · 新增地點') + '<label class="lbl">貼上 Google Maps 連結、座標或地名（可一次貼多行）</label>' +
+    let h = itinHtml() + nearbyHtml() + sec('// Add · 新增地點') + '<label class="lbl">貼上 Google Maps 連結、座標或地名（可一次貼多行）</label>' +
       '<textarea id="addInput" rows="3" placeholder="例：https://www.google.com/maps/place/...&#10;或：35.7148, 139.7967&#10;或：清水寺"></textarea>' +
       '<div class="row gap"><button class="btn primary grow" data-act="addGo">加入／搜尋</button><button class="btn" data-act="pickAdd">' + I('map') + ' 在地圖上點</button></div>';
     if (S.ui.addMsg) h += '<div class="msg">' + S.ui.addMsg + '</div>';
@@ -659,6 +659,82 @@
         '<button class="btn sm" data-act="toggleDone" data-id="' + next.id + '">' + I('done') + ' 打卡</button></div>';
     } else if (stops.length) h += '<div class="muted small">今天的行程都完成了，辛苦了！</div>';
     return h + '</div>';
+  }
+
+  /* ================= 貼上文字變行程 ================= */
+  function itinHtml() {
+    const it = S.ui.itin;
+    let h = sec('// Paste · 貼上行程文字');
+    if (!it) {
+      return h + '<details class="itin-box"' + (S.ui.itinOpen ? ' open' : '') + '><summary>' + I('text') + ' 把 ChatGPT 或部落格的行程貼進來，自動分天、標上地圖</summary>' +
+        '<textarea id="itinInput" rows="6" placeholder="例如：&#10;Day 1：淺草・上野&#10;- 上午：淺草寺&#10;- 下午：東京晴空塔&#10;Day 2&#10;- 明治神宮"></textarea>' +
+        '<button class="btn primary block" data-act="itinParse">' + I('auto') + ' 解析行程</button></details>';
+    }
+    if (it.running || it.done) {
+      const all = it.days.reduce((a, d) => a + d.items.filter((x) => x.on).length, 0);
+      h += '<div class="msg">' + (it.done ? I('check') + ' 完成：' : I('search') + ' 查詢位置中… ') + it.ok + ' / ' + all + ' 個找到位置' + (it.fail.length ? '，' + it.fail.length + ' 個找不到' : '') + '</div>';
+      if (it.done && it.fail.length) h += '<div class="msg warn">找不到：' + it.fail.map(esc).join('、') + '<br>可以在下方「新增地點」用地名＋城市再搜尋一次。</div>';
+      if (it.done) h += '<div class="row gap"><button class="btn primary grow" data-act="itinView">' + I('plan') + ' 看行程</button><button class="btn" data-act="itinReset">再貼一份</button></div>';
+      return h;
+    }
+    h += '<div class="muted small">找到 ' + it.days.length + ' 天、' + it.days.reduce((a, d) => a + d.items.length, 0) + ' 個地點。可以改名稱或取消勾選，再按「建立行程」。</div>';
+    for (const d of it.days) {
+      h += '<div class="itin-day"><b>' + dayLabel(d.day) + '</b>' + (d.title ? ' <span class="muted">' + esc(d.title) + '</span>' : '') +
+        d.items.map((x, i) => '<label class="itin-item"><input type="checkbox" data-itin="' + d.day + ':' + i + '"' + (x.on ? ' checked' : '') + '><input type="text" class="grow" data-itin-name="' + d.day + ':' + i + '" value="' + esc(x.name) + '"></label>').join('') + '</div>';
+    }
+    const t = trip();
+    h += '<label class="lbl">加到哪裡</label><select id="itinTarget"><option value="new">建立新旅程</option><option value="cur"' + (t.places.length ? '' : ' selected') + '>加到目前旅程「' + esc(t.name) + '」</option></select>' +
+      '<label class="lbl">城市或國家（選填，讓搜尋更準，例如：東京、京都、Seoul）</label><input id="itinCity" placeholder="東京" value="' + esc(it.city || '') + '">' +
+      '<div class="row gap" style="margin-top:12px"><button class="btn primary grow" data-act="itinRun">' + I('map') + ' 查詢位置並建立行程</button><button class="btn" data-act="itinReset">取消</button></div>';
+    return h;
+  }
+  function itinParse() {
+    const txt = ($('#itinInput') && $('#itinInput').value) || '';
+    const days = C.parseItineraryText(txt);
+    if (!days.length) { modalMsg('看不出行程', '找不到「Day 1／第一天／1日目」這類分天標題，或標題下沒有條列的地點。<br>請確認每一天有標題，地點用「- 」或「1.」條列。'); return; }
+    days.forEach((d) => d.items.forEach((x) => { x.on = true; }));
+    // 猜城市：常見的「XX三天兩夜」「Kyoto itinerary」
+    const m = txt.match(/([\u4e00-\u9fff]{2,4})(?:[一二三四五六七八九十\d]+天|自由行|行程)|(?:in|to)\s+([A-Z][a-z]+)|([A-Z][a-z]+)\s+itinerary/);
+    const city = m ? (m[1] || m[2] || m[3] || '').replace(/^.*(?:是|的|去|到|在|遊|游|玩|趟|個|个|為|为|了|份)/, '') : '';
+    S.ui.itin = { days, city: city.length >= 2 ? city : '', ok: 0, fail: [] };
+    renderPanel();
+  }
+  async function itinRun() {
+    const it = S.ui.itin; if (!it || it.running) return;
+    it.city = ($('#itinCity').value || '').trim().slice(0, 40);
+    const target = $('#itinTarget').value;
+    if (target === 'new') {
+      const n = C.newTrip(it.city ? it.city + ' ' + Math.max(...it.days.map((d) => d.day)) + ' 天' : '貼上的行程');
+      S.data.trips.push(n); S.data.current = n.id;
+    } else snapshot();
+    const t = trip();
+    t.days = Math.max(t.days, ...it.days.map((d) => d.day));
+    it.running = true; it.ok = 0; it.fail = [];
+    renderAll();
+    let anchor = t.places.length ? C.centroid(t.places) : null;
+    for (const d of it.days) {
+      let order = C.dayStops(t, d.day).length;
+      for (const x of d.items) {
+        if (!x.on) continue;
+        const q = it.city && !x.name.includes(it.city) ? x.name + ' ' + it.city : x.name;
+        let res = [];
+        try { res = await SV.geocode(q, { settings: settings(), near: anchor, silent: true }); } catch (e) { res = []; }
+        if (!res.length && q !== x.name) { try { res = await SV.geocode(x.name, { settings: settings(), near: anchor, silent: true }); } catch (e) { res = []; } }
+        const pick = anchor ? res.find((r) => C.haversine(r, anchor) < 300000) : res[0];
+        if (pick) {
+          const r = addPlaces([{ name: x.name, lat: pick.lat, lng: pick.lng, address: pick.address || '', cat: pick.cat || '', hoursWeek: pick.hoursWeek || null, url: pick.url || '' }], { silent: true, fit: false });
+          const p = r.added[0] || r.places.find((pp) => C.haversine(pp, pick) < 80);
+          if (p) { p.day = d.day; p.order = order++; p.locked = true; }
+          it.ok++;
+          if (!anchor) anchor = { lat: pick.lat, lng: pick.lng };
+        } else it.fail.push(x.name);
+        save(); if (S.ui.tab === 'add') renderPanel(true);
+      }
+    }
+    for (let k = 1; k <= t.days; k++) C.dayStops(t, k).forEach((s2, i) => { s2.order = i; });
+    it.running = false; it.done = true;
+    save(); renderAll(true);
+    toast('已建立行程：' + it.ok + ' 個地點' + (it.fail.length ? '，' + it.fail.length + ' 個找不到' : ''), 6000, target === 'new' ? null : undoAct);
   }
 
   /* ================= 附近搜尋 ================= */
@@ -1403,7 +1479,11 @@
   function renderTripSelect() {
     $('#tripSelect').innerHTML = S.data.trips.map((t) => '<option value="' + t.id + '"' + (t.id === S.data.current ? ' selected' : '') + '>' + (t.synced ? '⟲ ' : '') + esc(t.name) + '（' + t.places.length + '）</option>').join('') + '<option value="__new">＋ 新增旅程…</option>';
   }
-  function renderAll(fit) { applyTheme(); renderTripSelect(); renderPanel(true); renderMap(!!fit); updateBadge(); }
+  let lastTripId = '';
+  function renderAll(fit) {
+    if (lastTripId && lastTripId !== S.data.current) { S.ui.nearby = null; if (nearbyLayer) nearbyLayer.clearLayers(); S.ui.results = null; S.ui.addMsg = ''; }
+    lastTripId = S.data.current;
+    applyTheme(); renderTripSelect(); renderPanel(true); renderMap(!!fit); updateBadge(); }
 
   function bind() {
     $('#tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (b) switchTab(b.dataset.tab); });
@@ -1476,6 +1556,10 @@
         case 'cancelPick': setPick(null); break;
         case 'sample': loadSample(); break;
         case 'help': helpModal(); break;
+        case 'itinParse': itinParse(); break;
+        case 'itinRun': itinRun(); break;
+        case 'itinReset': S.ui.itin = null; S.ui.itinOpen = true; renderPanel(); break;
+        case 'itinView': S.ui.itin = null; S.ui.dayFilter = 0; switchTab('plan'); renderMap(true); break;
         case 'nearbyFrom': { const p = findPoint(t, id); if (p) { map.closePopup(); S.ui.nearby = { origin: { id: p.id, name: p.name, lat: p.lat, lng: p.lng }, kind: '', list: null }; switchTab('add'); } break; }
         case 'nearbyCenter': { const c = map.getCenter(); S.ui.nearby = { origin: { id: '', name: '地圖中心', lat: c.lat, lng: c.lng }, kind: '', list: null }; renderPanel(); break; }
         case 'nearbyKind': runNearby(el.dataset.k); break;
@@ -1500,6 +1584,8 @@
       if (el.id === 'startDate') { trip().startDate = el.value; save(); renderPanel(true); }
       else if (el.id === 'dayStart') { if (/^\d{2}:\d{2}$/.test(el.value)) { trip().dayStart = el.value; save(); renderPanel(true); } }
       else if (el.dataset.act === 'moveDay') moveToDay(el.dataset.id, parseInt(el.value, 10) || 0);
+      else if (el.dataset.itin && S.ui.itin) { const [d, i] = el.dataset.itin.split(':').map(Number); const day = S.ui.itin.days.find((x) => x.day === d); if (day) day.items[i].on = el.checked; }
+      else if (el.dataset.itinName && S.ui.itin) { const [d, i] = el.dataset.itinName.split(':').map(Number); const day = S.ui.itin.days.find((x) => x.day === d); if (day) day.items[i].name = el.value.trim().slice(0, 60) || day.items[i].name; }
       else if (el.id === 'mA' || el.id === 'mB') {
         S.ui.measure[el.id === 'mA' ? 'a' : 'b'] = el.value; renderPanel(); renderMap(false);
         const t = trip(), a = findPointAny(t, S.ui.measure.a), b = findPointAny(t, S.ui.measure.b);

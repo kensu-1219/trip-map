@@ -60,6 +60,9 @@ def handle(route):
         for k, (la, lo) in db.items():
             if k in q or q in k:
                 res.append({'name': k, 'display_name': k + ', 日本', 'lat': str(la), 'lon': str(lo)})
+        if not res and q.endswith(' 東京') and '找不到' not in q:
+            h = abs(hash(q)) % 1000
+            res.append({'name': q[:-3], 'display_name': q[:-3] + ', 東京, 日本', 'lat': str(35.62 + (h % 100) / 1000), 'lon': str(139.68 + (h // 10) / 1000)})
         return route.fulfill(status=200, content_type='application/json', headers={'Access-Control-Allow-Origin': '*'}, body=json.dumps(res))
     if 'routes.googleapis.com' in url:
         calls['google'] += 1
@@ -477,6 +480,22 @@ with sync_playwright() as p:
         vp.locator('.leg a.navlink').first.click()
     vp.wait_for_timeout(300); newp2.value.close()
     check('之後按導航直接開 Apple 地圖（不再詢問）', any('maps.apple.com' in u for u in reqs) and vp.locator('.navpick').count() == 0, (reqs or [''])[0][:60])
+    # v1.9：貼文字變行程
+    vp.click('#tabs button[data-tab=add]'); vp.wait_for_timeout(200)
+    vp.click('.itin-box summary')
+    vp.fill('#itinInput', open(os.path.join(FIX, 'chatgpt_zh.txt'), encoding='utf8').read().replace('澀谷十字路口', '找不到的地方'))
+    vp.click('[data-act=itinParse]'); vp.wait_for_selector('.itin-day')
+    check('貼上 ChatGPT 行程 → 解析出 3 天', vp.locator('.itin-day').count() == 3 and vp.input_value('#itinCity') == '東京')
+    vp.screenshot(path=f'{OUT}/32_itin_preview.png')
+    vp.uncheck('[data-itin="2:4"]')  # 取消 SHIBUYA SKY
+    vp.select_option('#itinTarget', 'new')
+    vp.click('[data-act=itinRun]')
+    wait_js(vp, "!!(TripApp.S.ui.itin && TripApp.S.ui.itin.done)", 40000); vp.wait_for_timeout(300)
+    dd = vp.evaluate("[1,2,3].map(d=>TripApp.C.dayStops(TripApp.trip(),d).map(p=>p.name))")
+    check('建立新旅程並排進對應天數', dd[0][:2] == ['淺草寺', '淺草今半'] and dd[2][0] == '築地場外市場' and 'SHIBUYA SKY' not in sum(dd, []), str(dd))
+    check('找不到的地點列出來', '找不到的地方' in vp.inner_text('#tabBody'))
+    vp.screenshot(path=f'{OUT}/33_itin_done.png')
+    vp.click('[data-act=itinView]'); vp.wait_for_timeout(500)
     check('v1.3 頁面沒有錯誤', not verr, '; '.join(verr[:3]))
     vctx.close()
 
