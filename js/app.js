@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.7.4';
+  const VERSION = '1.7.5';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -69,6 +69,7 @@
     map.on('click', onMapClick);
     const lbl = () => document.getElementById('map').classList.toggle('show-labels', map.getZoom() >= 15);
     map.on('zoomend', lbl); lbl();
+    map.on('zoomend', () => renderMap(false));
   }
   function setTiles() {
     let k = settings().tiles;
@@ -81,6 +82,39 @@
   function pinIcon(color, label, cls, html) {
     return L.divIcon({ className: 'pin-wrap', html: '<div class="pin ' + (cls || '') + '" style="--c:' + color + '"><span>' + (html || esc(label)) + '</span></div>',
       iconSize: [32, 40], iconAnchor: [16, 40], popupAnchor: [0, -40] });
+  }
+
+  /** 沒有實際路線時畫一條微彎的弧線（看起來是「示意」而不是道路） */
+  function arcCoords(a, b) {
+    const lat0 = (a.lat + b.lat) / 2, k = Math.cos(lat0 * Math.PI / 180);
+    const ax = a.lng * k, ay = a.lat, bx = b.lng * k, by = b.lat;
+    const mx = (ax + bx) / 2, my = (ay + by) / 2, dx = bx - ax, dy = by - ay;
+    const bend = 0.18; // 弧度：線段長度的 18%
+    const cx = mx - dy * bend, cy = my + dx * bend;
+    const out = [];
+    for (let i = 0; i <= 24; i++) {
+      const u = i / 24, v = 1 - u;
+      const x = v * v * ax + 2 * v * u * cx + u * u * bx, y = v * v * ay + 2 * v * u * cy + u * u * by;
+      out.push([y, x / k]);
+    }
+    return out;
+  }
+  /** 在線段中點放一個小箭頭表示方向 */
+  function addArrow(coords, col) {
+    if (coords.length < 2) return;
+    const pts = coords.map((c) => map.latLngToLayerPoint(c));
+    let total = 0; const seg = [];
+    for (let i = 1; i < pts.length; i++) { const d = pts[i].distanceTo(pts[i - 1]); seg.push(d); total += d; }
+    if (total < 46) return; // 太短不放
+    let acc = 0, i = 0;
+    while (i < seg.length && acc + seg[i] < total / 2) acc += seg[i++];
+    i = Math.min(i, seg.length - 1);
+    const p0 = pts[i], p1 = pts[i + 1], t = seg[i] ? (total / 2 - acc) / seg[i] : 0;
+    const mid = L.point(p0.x + (p1.x - p0.x) * t, p0.y + (p1.y - p0.y) * t);
+    const ang = Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180 / Math.PI;
+    L.marker(map.layerPointToLatLng(mid), { interactive: false, keyboard: false, zIndexOffset: -500,
+      icon: L.divIcon({ className: 'route-arrow', iconSize: [14, 14], iconAnchor: [7, 7],
+        html: '<svg viewBox="0 0 14 14" style="transform:rotate(' + ang.toFixed(1) + 'deg)"><path d="M3 2.5L10 7L3 11.5" fill="none" stroke="' + col + '" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' }) }).addTo(routeLayer);
   }
 
   function renderMap(fit) {
@@ -105,19 +139,29 @@
     // 路線
     const days = f ? [f] : range(t.days);
     if (t.places.length <= 400) {
+      const halo = cssVar('--paper') || '#f4efdf';
       for (const d of days) {
+        const col = dc(d);
         for (const [a, b] of dayLegs(t, d)) {
           const leg = legInfo(t, a, b);
-          const coords = leg.res.coords && leg.res.coords.length ? leg.res.coords : [[a.lat, a.lng], [b.lat, b.lng]];
-          L.polyline(coords, { color: '#2f2c25', weight: (f ? 5 : 4) + 2.5, opacity: 0.35, dashArray: leg.res.estimated ? '2 9' : null, lineCap: 'butt' }).addTo(routeLayer);
-          L.polyline(coords, { color: dc(d), weight: f ? 4 : 3, opacity: 0.95, dashArray: leg.res.estimated ? '2 9' : null, lineCap: 'butt' }).addTo(routeLayer);
+          const real = !leg.res.estimated && leg.res.coords && leg.res.coords.length > 2;
+          const coords = real ? leg.res.coords : arcCoords(a, b);
+          const w = f ? 4.5 : 3.5;
+          if (real) {
+            L.polyline(coords, { color: halo, weight: w + 4, opacity: 0.9, lineCap: 'round', lineJoin: 'round', interactive: false, smoothFactor: 1.5 }).addTo(routeLayer);
+            L.polyline(coords, { color: col, weight: w, opacity: 0.95, lineCap: 'round', lineJoin: 'round', interactive: false, smoothFactor: 1.5 }).addTo(routeLayer);
+          } else {
+            L.polyline(coords, { color: halo, weight: w + 3.5, opacity: 0.9, lineCap: 'round', dashArray: '0.1 ' + (w + 7), interactive: false }).addTo(routeLayer);
+            L.polyline(coords, { color: col, weight: w + 1, opacity: 1, lineCap: 'round', dashArray: '0.1 ' + (w + 7), interactive: false }).addTo(routeLayer);
+          }
+          addArrow(coords, col);
         }
       }
     }
     // 量距離
     const ma = findPointAny(t, S.ui.measure.a), mb = findPointAny(t, S.ui.measure.b);
     if (S.ui.tab === 'measure' && ma && mb) {
-      L.polyline([[ma.lat, ma.lng], [mb.lat, mb.lng]], { color: '#111', weight: 2, dashArray: '2 6' }).addTo(routeLayer);
+      L.polyline(arcCoords(ma, mb), { color: cssVar('--accent'), weight: 3, dashArray: '0.1 8', lineCap: 'round' }).addTo(routeLayer);
     }
     if (fit) fitTo(visible.length ? visible.concat(f ? [C.dayEnds(t, f).start, C.dayEnds(t, f).end].filter(Boolean) : hotels(t)) : allPoints(t));
   }
