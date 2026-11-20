@@ -40,14 +40,14 @@
     check: '<path d="M4.5 12.5l5 5 10-11"/>',
     ext: '<path d="M13.5 3.5h7v7M20.5 3.5L11 13"/><path d="M18 14v6.5H3.5V6H10"/>',
     // ---- 地點分類 ----
-    c_food: '<path d="M7 3v7.5a2 2 0 0 0 2 2V21M5 3v6M9 3v6M7 9.5V3"/><path d="M17.5 21V3c-2.2 1.2-3.5 3.8-3.5 7.5V13h3.5"/>',
+    c_food: '<path d="M5.5 3v5.5a2.5 2.5 0 0 0 5 0V3M8 3v18"/><path d="M18 21V3c-2.3 1.3-3.5 4-3.5 7.5V13H18"/>',
     c_cafe: '<path d="M4.5 9h12v5.5a4.5 4.5 0 0 1-4.5 4.5H9a4.5 4.5 0 0 1-4.5-4.5z"/><path d="M16.5 10.5h1.5a2.3 2.3 0 0 1 0 4.6h-1.8M3.5 21h15"/><path d="M8.5 3.5c-.8 1 .8 2 0 3M12.5 3.5c-.8 1 .8 2 0 3"/>',
     c_bar: '<path d="M4 4h16l-8 9z"/><path d="M12 13v7.5M8 20.5h8M15.5 4l2.5-2"/><circle cx="16.5" cy="7" r="1" fill="currentColor"/>',
-    c_station: '<rect x="5.5" y="3" width="13" height="14.5" rx="1"/><path d="M5.5 10.5h13M9 3v7.5M15 3v7.5"/><circle cx="9" cy="14" r=".9" fill="currentColor"/><circle cx="15" cy="14" r=".9" fill="currentColor"/><path d="M8 17.5L6 21M16 17.5l2 3.5"/>',
+    c_station: '<rect x="6" y="3" width="12" height="13" rx="2"/><path d="M6 9.5h12"/><circle cx="9.3" cy="12.8" r=".6" fill="currentColor"/><circle cx="14.7" cy="12.8" r=".6" fill="currentColor"/><path d="M9 16l-2.5 5M15 16l2.5 5M8 19h8"/>',
     c_airport: '<path d="M2.8 14.5L21 7.6c.8-.3.9-1.4.1-1.8-.6-.3-1.3-.3-1.9 0L14.5 8 7.6 4.6 5.5 5.5l4.6 4.3-4 1.6-2.4-1.3-1.5.7 2 3z"/><path d="M3 20.5h18"/>',
     c_shopping: '<path d="M4.5 8h15l-1 13h-13z"/><path d="M8.5 10.5V7a3.5 3.5 0 0 1 7 0v3.5"/>',
     c_market: '<path d="M3 9.5L4.5 4h15L21 9.5z"/><path d="M3 9.5a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M4.5 12v8.5h15V12M9.5 20.5v-5h5v5"/>',
-    c_museum: '<path d="M2.5 9L12 3.5 21.5 9z"/><path d="M4 21h16M3 21v-1.5h18V21M5.5 11.5v6M9.8 11.5v6M14.2 11.5v6M18.5 11.5v6M4 9v2.5h16V9"/>',
+    c_museum: '<path d="M3 9L12 4l9 5z"/><path d="M6 11.5v6.5M12 11.5v6.5M18 11.5v6.5M3.5 21h17M4.5 18.5h15"/>',
     c_temple: '<path d="M2.5 5.5c3 .8 6 1.2 9.5 1.2s6.5-.4 9.5-1.2"/><path d="M4.5 10h15M6.5 6.5V21M17.5 6.5V21M12 6.7V10"/>',
     c_castle: '<path d="M4 21V10h3V7.5h2.5V10h5V7.5H17V10h3v11z"/><path d="M10 21v-4.5a2 2 0 0 1 4 0V21M12 7.5V3l3.5 1.5L12 6"/>',
     c_park: '<path d="M12 21v-6.5"/><path d="M12 3L6 12h3l-3.5 4.5h13L15 12h3z"/>',
@@ -81,7 +81,7 @@
     filter: '<path d="M3.5 4.5h17l-6.5 8v6l-4 2v-8z"/>',
   };
   const sprite = '<svg xmlns="http://www.w3.org/2000/svg" style="display:none">' +
-    Object.entries(P).map(([k, v]) => '<symbol id="i-' + k + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" stroke-linejoin="miter">' + v + '</symbol>').join('') + '</svg>';
+    Object.entries(P).map(([k, v]) => '<symbol id="i-' + k + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="square" stroke-linejoin="miter">' + v + '</symbol>').join('') + '</svg>';
   function inject() {
     if (document.getElementById('icon-sprite')) return;
     const d = document.createElement('div'); d.id = 'icon-sprite'; d.innerHTML = sprite;

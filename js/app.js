@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.7.1';
+  const VERSION = '1.7.2';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -78,9 +78,9 @@
     tileLayer = L.tileLayer(t.url, { attribution: t.attr, maxZoom: t.max, subdomains: 'abcd', crossOrigin: true }).addTo(map);
   }
 
-  function pinIcon(color, label, cls, html, badge) {
-    return L.divIcon({ className: 'pin-wrap', html: '<div class="pin ' + (cls || '') + '" style="--c:' + color + '"><span>' + (html || esc(label)) + '</span>' + (badge ? '<em>' + esc(badge) + '</em>' : '') + '</div>',
-      iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -16] });
+  function pinIcon(color, label, cls, html) {
+    return L.divIcon({ className: 'pin-wrap', html: '<div class="pin ' + (cls || '') + '" style="--c:' + color + '"><span>' + (html || esc(label)) + '</span></div>',
+      iconSize: [32, 40], iconAnchor: [16, 40], popupAnchor: [0, -40] });
   }
 
   function renderMap(fit) {
@@ -93,9 +93,9 @@
       if (dim(p) && t.places.length > 300) continue;
       const num = p.day ? String(p.order + 1) : '';
       const cls = (dim(p) ? 'dim ' : '') + (p.done ? 'done' : '');
-      const m = L.marker([p.lat, p.lng], { icon: pinIcon(dc(p.day), '', cls, catIc(p.cat), num), title: p.name, zIndexOffset: dim(p) ? -100 : 0 });
+      const m = L.marker([p.lat, p.lng], { icon: pinIcon(dc(p.day), '', cls, catIc(p.cat)), title: p.name, zIndexOffset: dim(p) ? -100 : 0 });
       m.bindPopup(() => popupHtml(p), { maxWidth: 260 });
-      if (!dim(p) && t.places.length <= 300) m.bindTooltip(esc(p.name.length > 14 ? p.name.slice(0, 13) + '…' : p.name), { permanent: true, direction: 'right', offset: [14, 0], className: 'plabel' });
+      if (!dim(p) && t.places.length <= 300) m.bindTooltip((num ? '<b style="--lc:' + dc(p.day) + '">' + num + '</b>' : '') + esc(p.name.length > 14 ? p.name.slice(0, 13) + '…' : p.name), { permanent: true, direction: 'right', offset: [16, -18], className: 'plabel' });
       m.addTo(markerLayer);
     }
     for (const h of hotels(t)) {

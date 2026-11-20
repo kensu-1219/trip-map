@@ -305,7 +305,10 @@ with sync_playwright() as p:
     vp.goto(BASE); vp.wait_for_selector('.welcome', state='attached'); vp.click('[data-act=sample]'); vp.wait_for_timeout(2000)
     cats = vp.evaluate('Object.fromEntries(TripApp.trip().places.map(p=>[p.name,p.cat]))')
     check('分類自動判斷（淺草寺=寺廟、晴空塔=展望、築地=市場、teamLab=美術館）', cats['淺草寺'] == 'temple' and cats['東京晴空塔'] == 'view' and cats['築地場外市場'] == 'market' and cats['teamLab Planets'] == 'museum', str(cats)[:120])
-    check('地圖標記顯示分類圖示＋順序號碼', vp.locator('.pin use[href="#i-c_temple"]').count() >= 1 and vp.locator('.pin em').count() >= 10)
+    check('地圖標記顯示分類圖示、不再有擋畫面的號碼', vp.locator('.pin use[href="#i-c_temple"]').count() >= 1 and vp.locator('.pin em').count() == 0)
+    vp.evaluate("document.querySelector('#map').classList.add('show-labels')")
+    check('放大後地名標籤帶順序號碼', vp.locator('.leaflet-tooltip.plabel b').count() >= 10)
+    vp.evaluate("document.querySelector('#map').classList.remove('show-labels')")
     # 營業時間警告：把每天出門時間改到 05:00 → 淺草寺 06:00 才開
     vp.fill('#dayStart', '04:30'); vp.dispatch_event('#dayStart', 'change'); vp.wait_for_timeout(300)
     check('營業時間衝突警告（太早到）', vp.locator('.warnline').count() >= 1, vp.locator('.warnline').first.inner_text() if vp.locator('.warnline').count() else '')
