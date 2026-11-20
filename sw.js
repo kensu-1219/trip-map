@@ -1,5 +1,5 @@
 /* Service worker：程式離線可開、看過的地圖圖磚離線可看 */
-const VERSION = 'v1.7.5';
+const VERSION = 'v1.8.0';
 const SHELL = 'shell-' + VERSION;
 const TILES = 'tiles-v1';
 const MAX_TILES = 3000;
@@ -23,7 +23,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
   // 地圖圖磚：先用快取，背景更新
-  if (/tile\.openstreetmap\.org|basemaps\.cartocdn\.com/.test(url.hostname)) {
+  if (/tile\.openstreetmap\.org|basemaps\.cartocdn\.com|upload\.wikimedia\.org/.test(url.hostname)) {
     e.respondWith(caches.open(TILES).then(async (c) => {
       const hit = await c.match(e.request);
       const net = fetch(e.request).then((r) => { if (r.ok || r.type === 'opaque') { c.put(e.request, r.clone()); trimTiles(); } return r; }).catch(() => hit);

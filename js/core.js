@@ -421,9 +421,49 @@
     return groups.map((g) => (g.d.length > 2 ? WD[g.d[0]] + '–' + WD[g.d[g.d.length - 1]] : g.d.map((x) => WD[x]).join('、')) + ' ' + (g.v === 'off' ? '公休' : g.v === '?' ? '不明' : g.v)).join('；');
   }
 
+
+  /* ---------- 地點照片 ---------- */
+  const normName = (x) => String(x || '').toLowerCase().replace(/[\s·・\-_'’"“”()（）【】\[\]、,，.。!！?？:：]/g, '');
+  /** 從維基百科查詢結果挑一張「真的是這個地點」的照片 */
+  function wikiPick(json, place, opts) {
+    opts = opts || {};
+    const pages = json && json.query && json.query.pages ? Object.values(json.query.pages) : [];
+    const want = normName(place.name);
+    const cands = [];
+    for (const pg of pages) {
+      if (!pg.thumbnail || !/^https:\/\/upload\.wikimedia\.org\//.test(pg.thumbnail.source || '')) continue;
+      if (/\.svg/i.test(pg.thumbnail.source) || /(logo|map|flag|地図|地圖|位置図)/i.test(pg.thumbnail.source)) continue;
+      const co = pg.coordinates && pg.coordinates[0];
+      const dist = co ? haversine(place, { lat: co.lat, lng: co.lon }) : null;
+      const title = normName(pg.title);
+      const nameHit = title && want && (title === want || (want.length >= 2 && (title.includes(want) || want.includes(title))));
+      if (dist != null && dist > (opts.maxDist || 2500)) continue;
+      if (dist == null && !(title === want)) continue;
+      if (opts.geo ? dist == null : !(nameHit || (dist != null && dist < 400))) continue;
+      const score = (nameHit ? 0 : 1000) + (dist != null ? dist : 500) + (pg.index || 0) * 10;
+      cands.push({ score, url: pg.thumbnail.source, title: pg.title, link: pg.fullurl || '' });
+    }
+    cands.sort((a, b) => a.score - b.score);
+    return cands[0] || null;
+  }
+  function wikiLangs(name) {
+    if (/[぀-ヿ]/.test(name)) return ['ja', 'zh', 'en'];
+    if (/[一-鿿]/.test(name)) return ['zh', 'ja', 'en'];
+    return ['en', 'zh', 'ja'];
+  }
+  const PHOTO_GEO_CATS = ['temple', 'museum', 'castle', 'park', 'view', 'landmark', 'theme', 'zoo', 'beach', 'station', 'market', 'onsen'];
+  function sanitizePhoto(ph) {
+    if (!ph || typeof ph !== 'object') return null;
+    if (ph.src === 'wiki' && /^https:\/\/upload\.wikimedia\.org\/[^\s"'<>()]+$/.test(ph.url || '')) {
+      return { src: 'wiki', url: ph.url, link: /^https:\/\/[a-z]{2,3}\.(m\.)?wikipedia\.org\/[^\s"'<>]+$/.test(ph.link || '') ? ph.link : '' };
+    }
+    if (ph.src === 'google' && /^places\/[\w-]+\/photos\/[\w-]+$/.test(ph.name || '')) return { src: 'google', name: ph.name };
+    return null;
+  }
+
   /* ---------- 行程資料 ---------- */
   const PALETTE = ['#b0533b', '#3f6e78', '#6b7a35', '#7d4f7a', '#b4862f', '#9a4558', '#3c5a86', '#5f7f68', '#8a6a4b', '#6e6a5c'];
-  const THEMES = ['auto', 'parchment', 'relic', 'neon', 'washi', 'tide'];
+  const THEMES = ['auto', 'clean', 'night', 'parchment', 'relic', 'neon', 'washi', 'tide'];
   const dayColor = (d) => (d > 0 ? PALETTE[(d - 1) % PALETTE.length] : '#8a8370');
 
   function newTrip(name) {
@@ -443,7 +483,8 @@
       locked: !!p.locked, stay: Number.isFinite(+p.stay) ? Math.max(0, Math.min(1440, +p.stay)) : 60,
       cat: CATS[p.cat] ? p.cat : guessCat(p.name, p.address),
       done: !!p.done, hours: s(p.hours, 60),
-      hoursWeek: Array.isArray(p.hoursWeek) && p.hoursWeek.length === 7 ? p.hoursWeek.map((x) => s(x, 60)) : null, cost: Number.isFinite(+p.cost) && +p.cost > 0 ? Math.min(1e9, +p.cost) : 0,
+      hoursWeek: Array.isArray(p.hoursWeek) && p.hoursWeek.length === 7 ? p.hoursWeek.map((x) => s(x, 60)) : null,
+      photo: sanitizePhoto(p.photo), photoTry: Number.isFinite(+p.photoTry) ? +p.photoTry : 0, cost: Number.isFinite(+p.cost) && +p.cost > 0 ? Math.min(1e9, +p.cost) : 0,
     };
   }
   function sanitizeTrip(t) {
@@ -546,6 +587,14 @@
     return { stops: out, end: t };
   }
 
+  /** Apple 地圖：d 開車、w 步行、r 大眾運輸、c 單車 */
+  function appleDirUrl(a, b, mode) {
+    const f = { walk: 'w', bike: 'c', drive: 'd', transit: 'r' }[mode] || 'r';
+    return 'https://maps.apple.com/?saddr=' + a.lat + ',' + a.lng + '&daddr=' + b.lat + ',' + b.lng + '&dirflg=' + f;
+  }
+  function applePlaceUrl(p) {
+    return 'https://maps.apple.com/?ll=' + p.lat + ',' + p.lng + '&q=' + encodeURIComponent(p.name || '');
+  }
   function gmapsPlaceUrl(p) {
     if (p.url && /^https:\/\//.test(p.url)) return p.url;
     return 'https://www.google.com/maps/search/?api=1&query=' + p.lat + ',' + p.lng;
@@ -918,7 +967,7 @@
       n: t.name, d: t.days, s: t.startDate || undefined, h: t.dayStart && t.dayStart !== '09:00' ? t.dayStart : undefined,
       b: t.base ? [t.base.name, +t.base.lat.toFixed(6), +t.base.lng.toFixed(6)] : undefined,
       db: t.dayBase && Object.keys(t.dayBase).length ? Object.fromEntries(Object.entries(t.dayBase).map(([d, v]) => [d, [v.name, +v.lat.toFixed(6), +v.lng.toFixed(6)]])) : undefined,
-      p: t.places.map((p) => [p.name, +p.lat.toFixed(6), +p.lng.toFixed(6), p.day, p.order, p.note || 0, p.locked ? 1 : 0, p.stay === 60 ? 0 : p.stay, p.url && p.url.length < 300 ? p.url : 0, p.cat || 0, p.hours || 0, p.cost || 0, p.done ? 1 : 0, p.hoursWeek || 0]),
+      p: t.places.map((p) => [p.name, +p.lat.toFixed(6), +p.lng.toFixed(6), p.day, p.order, p.note || 0, p.locked ? 1 : 0, p.stay === 60 ? 0 : p.stay, p.url && p.url.length < 300 ? p.url : 0, p.cat || 0, p.hours || 0, p.cost || 0, p.done ? 1 : 0, p.hoursWeek || 0, p.photo && p.photo.src === 'wiki' ? [p.photo.url, p.photo.link] : 0]),
       th: t.theme && t.theme !== 'auto' ? t.theme : undefined, cu: t.currency || undefined,
       cl: t.checklist && t.checklist.length ? t.checklist.map((c) => [c.t, c.done ? 1 : 0, c.g || 0]) : undefined,
       m: packModes(t),
@@ -945,7 +994,7 @@
     t.places = (o.p || []).map((a, i) => {
       const id = 'p' + i.toString(36);
       idMap.push(id);
-      return { id, name: a[0], lat: a[1], lng: a[2], day: a[3], order: a[4], note: a[5] || '', locked: !!a[6], stay: a[7] || 60, url: a[8] || '', cat: a[9] || '', hours: a[10] || '', cost: a[11] || 0, done: !!a[12], hoursWeek: a[13] || null };
+      return { id, name: a[0], lat: a[1], lng: a[2], day: a[3], order: a[4], note: a[5] || '', locked: !!a[6], stay: a[7] || 60, url: a[8] || '', cat: a[9] || '', hours: a[10] || '', cost: a[11] || 0, done: !!a[12], hoursWeek: a[13] || null, photo: a[14] ? { src: 'wiki', url: a[14][0], link: a[14][1] } : null, photoTry: a[14] ? 1 : 0 };
     });
     t.legModes = {};
     for (const [k, v] of Object.entries(o.m || {})) {
@@ -958,8 +1007,8 @@
   return {
     haversine, validLatLng, uid, fmtDist, fmtDur, parseGoogleMapsUrl, parseCSV, parseImport,
     parseGeoJSON, parseTakeoutCSV, parseKML, newTrip, sanitizeTrip, sanitizePlace, mergePlaces,
-    MODES, estimateLeg, suggestMode, gmapsDirUrl, gmapsPlaceUrl, gmapsDayUrl, timeline, hm, toMin, centroid, balancedClusters,
+    MODES, estimateLeg, suggestMode, gmapsDirUrl, gmapsPlaceUrl, gmapsDayUrl, appleDirUrl, applePlaceUrl, timeline, hm, toMin, centroid, balancedClusters,
     orderStops, planDays, pathLen, dayStops, legKey, parseOsrm, decodePolyline, parseGoogleRoute,
-    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, CAT_COLOR, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel,
+    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, CAT_COLOR, wikiPick, wikiLangs, PHOTO_GEO_CATS, sanitizePhoto, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel,
   };
 });

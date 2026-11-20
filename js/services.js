@@ -183,11 +183,59 @@
     return C.parseOverpass(j, origin, kind);
   }
 
+  /* ---------- 地點照片 ---------- */
+  const photoQueue = makeQueue(2, 200);
+  async function wikiPhoto(place) {
+    const name = String(place.name || '').replace(/\s+(本店|店|分店)$/, '').slice(0, 80);
+    for (const lang of C.wikiLangs(name)) {
+      const url = 'https://' + lang + '.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrlimit=5&gsrsearch=' + encodeURIComponent(name) +
+        '&prop=pageimages|coordinates|info&inprop=url&piprop=thumbnail&pithumbsize=640&coprimary=primary';
+      const j = await photoQueue(() => fetchJSON(url, {}, 10000));
+      const pick = C.wikiPick(j, place, { maxDist: 3000 });
+      if (pick) return { src: 'wiki', url: pick.url, link: pick.link };
+    }
+    if (C.PHOTO_GEO_CATS.includes(place.cat)) {
+      for (const lang of ['ja', 'zh', 'en'].slice(0, 2)) {
+        const url = 'https://' + lang + '.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=geosearch&ggslimit=6&ggsradius=120&ggscoord=' +
+          place.lat.toFixed(6) + '%7C' + place.lng.toFixed(6) + '&prop=pageimages|coordinates|info&inprop=url&piprop=thumbnail&pithumbsize=640&coprimary=primary';
+        const j = await photoQueue(() => fetchJSON(url, {}, 10000));
+        const pick = C.wikiPick(j, place, { maxDist: 150, geo: true });
+        if (pick) return { src: 'wiki', url: pick.url, link: pick.link };
+      }
+    }
+    return null;
+  }
+  async function googlePhoto(place, key) {
+    const j = await photoQueue(() => fetchJSON('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'places.location,places.photos' },
+      body: JSON.stringify({ textQuery: place.name, pageSize: 3, locationBias: { circle: { center: { latitude: place.lat, longitude: place.lng }, radius: 300 } } }),
+    }, 10000));
+    for (const p of (j && j.places) || []) {
+      if (!p.location || !p.photos || !p.photos.length) continue;
+      if (C.haversine(place, { lat: p.location.latitude, lng: p.location.longitude }) > 400) continue;
+      return C.sanitizePhoto({ src: 'google', name: p.photos[0].name });
+    }
+    return null;
+  }
+  async function findPhoto(place, settings) {
+    let r = null;
+    try { r = await wikiPhoto(place); } catch (e) { /* 網路錯誤：交給下次 */ if (!settings || !settings.gkey) throw e; }
+    if (!r && settings && settings.gkey) { try { r = await googlePhoto(place, settings.gkey); } catch (e) { /* ignore */ } }
+    return r;
+  }
+  function photoSrc(ph, settings) {
+    if (!ph) return '';
+    if (ph.src === 'wiki') return ph.url;
+    if (ph.src === 'google' && settings && settings.gkey) return 'https://places.googleapis.com/v1/' + ph.name + '/media?maxWidthPx=640&key=' + encodeURIComponent(settings.gkey);
+    return '';
+  }
+
   async function testGoogleKey(key) {
     const a = { lat: 35.681236, lng: 139.767125 }, b = { lat: 35.714765, lng: 139.796655 };
     const r = await googleTransit(a, b, key);
     return r;
   }
 
-  window.TripServices = { LS, peekLeg, getLeg, geocode, testGoogleKey, clearRouteCache, fetchJSON, nearby };
+  window.TripServices = { LS, peekLeg, getLeg, geocode, testGoogleKey, clearRouteCache, fetchJSON, nearby, findPhoto, photoSrc };
 })();

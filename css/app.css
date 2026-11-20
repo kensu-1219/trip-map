@@ -331,3 +331,117 @@ html[data-theme="relic"] .stop .cat, html[data-theme="neon"] .stop .cat { filter
 
 .route-arrow { background: none; border: 0; pointer-events: none; }
 .route-arrow svg { width: 14px; height: 14px; display: block; filter: drop-shadow(0 0 1.5px rgba(255,255,255,.95)); }
+
+/* =========================================================
+   清爽主題（預設）：html[data-style="modern"]
+   ========================================================= */
+.zh { display: none; }
+html[data-style="modern"] .en { display: none; }
+html[data-style="modern"] .zh { display: inline; }
+html[data-theme="clean"] {
+  --paper: #f5f6f8; --card: #ffffff; --soft: #eef0f3; --ink: #1d2433; --ink-soft: #3a4252;
+  --muted: #6b7280; --line: rgba(29, 36, 51, .14); --hair: rgba(29, 36, 51, .08);
+  --pri: #e8553a; --on-pri: #ffffff; --accent: #e8553a; --ok: #1f9d6b; --danger: #d64545;
+  --warn-bg: #fff4e5; --warn-fg: #8a4b00; --r: 12px; --tiles: none;
+  --sans: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --mono: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang TC", system-ui, sans-serif;
+}
+html[data-theme="night"] {
+  --paper: #0f1115; --card: #181b21; --soft: #22262e; --ink: #e8eaed; --ink-soft: #c6cad1;
+  --muted: #9aa0a8; --line: rgba(255, 255, 255, .14); --hair: rgba(255, 255, 255, .07);
+  --pri: #ff7a5c; --on-pri: #14161a; --accent: #ff7a5c; --ok: #3ccf91; --danger: #ff6b6b;
+  --warn-bg: #33270f; --warn-fg: #ffd08a; --r: 12px; --tiles: brightness(.95) contrast(1.05);
+  --sans: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --mono: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang TC", system-ui, sans-serif;
+}
+html[data-style="modern"] body { letter-spacing: 0; }
+html[data-style="modern"] #panel, html[data-style="modern"] .modal-card { background-image: none; }
+html[data-style="modern"] #topbar { background: var(--card); border-bottom: 0; box-shadow: 0 1px 0 var(--hair), 0 2px 10px rgba(0,0,0,.04); }
+html[data-style="modern"] #tripSelect { border: 0; background: var(--soft); border-radius: 10px; font-size: 16px; padding: 6px 10px; }
+html[data-style="modern"] .icon-btn, html[data-style="modern"] .fab { border: 0; background: var(--soft); border-radius: 10px; }
+html[data-style="modern"] .fab { background: var(--card); box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+html[data-style="modern"] .icon-btn:hover, html[data-style="modern"] .fab:hover { background: var(--line); color: var(--ink); }
+html[data-style="modern"] .leaflet-bar { border: 0 !important; box-shadow: 0 2px 8px rgba(0,0,0,.15) !important; border-radius: 10px !important; overflow: hidden; }
+html[data-style="modern"] .leaflet-bar a:hover { background: var(--soft); color: var(--ink); }
+html[data-style="modern"] #panel { border-top: 0; border-radius: 18px 18px 0 0; box-shadow: 0 -4px 24px rgba(0,0,0,.12); background: var(--paper); }
+html[data-style="modern"] #panel::before { display: none; }
+html[data-style="modern"] #sheetHandle span { width: 40px; height: 5px; border-radius: 3px; background: var(--line); }
+@media (min-width: 900px) { html[data-style="modern"] #panel { border-radius: 0; box-shadow: 1px 0 0 var(--hair); } }
+/* 分頁：iOS 分段控制 */
+html[data-style="modern"] #tabs { margin: 2px 12px 8px; padding: 3px; gap: 2px; background: var(--soft); border: 0; border-radius: 11px; }
+html[data-style="modern"] #tabs button { border: 0; border-radius: 9px; color: var(--ink-soft); font-weight: 500; padding: 7px 2px; }
+html[data-style="modern"] #tabs button.on { background: var(--card); color: var(--ink); font-weight: 650; box-shadow: 0 1px 3px rgba(0,0,0,.12); outline: 0; }
+html[data-style="modern"] .sec { font: 650 13px var(--sans); letter-spacing: 0; text-transform: none; color: var(--muted); margin: 10px 0 8px; }
+html[data-style="modern"] .sec::after { display: none; }
+/* 按鈕與輸入 */
+html[data-style="modern"] .btn { border: 0; background: var(--soft); color: var(--ink); font-weight: 550; }
+html[data-style="modern"] .btn:hover { background: var(--line); color: var(--ink); }
+html[data-style="modern"] .btn.primary { background: var(--pri); color: var(--on-pri); outline: 0; box-shadow: 0 2px 8px color-mix(in srgb, var(--pri) 35%, transparent); }
+html[data-style="modern"] .btn.primary:hover { filter: brightness(1.06); background: var(--pri); color: var(--on-pri); }
+html[data-style="modern"] .btn.accent { background: var(--ink); color: var(--card); }
+html[data-style="modern"] .btn.danger { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+html[data-style="modern"] .btn.ghost { background: transparent; color: var(--pri); }
+html[data-style="modern"] input, html[data-style="modern"] select, html[data-style="modern"] textarea { border: 1px solid transparent; background: var(--soft); border-radius: 10px; }
+html[data-style="modern"] input:focus, html[data-style="modern"] select:focus, html[data-style="modern"] textarea:focus { border-color: var(--pri); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pri) 20%, transparent); background: var(--card); }
+html[data-style="modern"] .stepper { border: 0; background: var(--soft); border-radius: 10px; }
+html[data-style="modern"] .stepper button:hover { background: var(--line); color: var(--ink); border-radius: 10px; }
+html[data-style="modern"] .chip { border: 0; background: var(--card); box-shadow: inset 0 0 0 1px var(--line); border-radius: 999px; font: 600 13px var(--sans); padding: 6px 12px 6px 10px; }
+html[data-style="modern"] .chip::before { border-radius: 50%; transform: none; width: 8px; height: 8px; }
+html[data-style="modern"] .chip.on { background: var(--ink); color: var(--card); box-shadow: none; }
+html[data-style="modern"] .chip.on::before { box-shadow: 0 0 0 2px var(--card); }
+/* 卡片 */
+html[data-style="modern"] .day, html[data-style="modern"] .base-row, html[data-style="modern"] .today, html[data-style="modern"] .msg, html[data-style="modern"] .result, html[data-style="modern"] .themeopt { border: 0; border-radius: 16px; background: var(--card); box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 2px 10px rgba(0,0,0,.04); }
+html[data-style="modern"] .day { padding: 4px 14px 10px; }
+html[data-style="modern"] .day::before, html[data-style="modern"] .day::after { display: none; }
+html[data-style="modern"] .day-h { border-bottom: 1px solid var(--hair); padding: 12px 0 10px; }
+html[data-style="modern"] .day-h b { font: 700 18px var(--sans); letter-spacing: 0; }
+html[data-style="modern"] .day-h b::before { border-radius: 50%; transform: none; width: 10px; height: 10px; }
+html[data-style="modern"] .day-h .muted { font: 13px var(--sans); }
+html[data-style="modern"] .stop { border-bottom-color: var(--hair); padding: 10px 2px; }
+html[data-style="modern"] .stop a { font-weight: 650; }
+html[data-style="modern"] .time { font: 650 12px var(--sans); color: var(--pri); }
+html[data-style="modern"] .leg { border-left: 2px dotted var(--line); }
+html[data-style="modern"] .modes { border: 0; background: var(--soft); border-radius: 9px; padding: 2px; }
+html[data-style="modern"] .mode { border-radius: 7px !important; }
+html[data-style="modern"] .mode.on { background: var(--card); color: var(--pri); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+html[data-style="modern"] .today { box-shadow: inset 0 0 0 1.5px var(--pri), 0 2px 10px rgba(0,0,0,.05); }
+html[data-style="modern"] .today-h b { font-family: var(--sans); letter-spacing: 0; }
+html[data-style="modern"] .msg.warn, html[data-style="modern"] .banner { border: 0; border-radius: 12px; }
+/* 對話框、提示 */
+html[data-style="modern"] #modal { background: rgba(10, 12, 16, .45); backdrop-filter: blur(2px); }
+html[data-style="modern"] .modal-card { border: 0; outline: 0; border-radius: 20px; padding: 0 20px 18px; background: var(--card); }
+html[data-style="modern"] .modal-card h3 { background: var(--card); color: var(--ink); font-size: 18px; padding: 18px 20px 10px; margin: 0 -20px 6px; border-bottom: 0; }
+html[data-style="modern"] .modal-card h3::before { display: none; }
+html[data-style="modern"] #toast { background: #1d2433; color: #fff; border: 0; outline: 0; border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+html[data-style="modern"] #toast::before { display: none; }
+html[data-style="modern"] #toast button { border: 0; background: rgba(255,255,255,.15); border-radius: 8px; color: #fff; }
+html[data-style="modern"] #pickHint { background: #1d2433; color: #fff; border: 0; outline: 0; border-radius: 999px; }
+html[data-style="modern"] .leaflet-popup-content-wrapper { border: 0; border-radius: 16px !important; box-shadow: 0 6px 24px rgba(0,0,0,.2); }
+html[data-style="modern"] .catopt, html[data-style="modern"] .themeopt { border: 0; background: var(--soft); border-radius: 12px; }
+html[data-style="modern"] .catopt.on { background: var(--pri); color: var(--on-pri); }
+html[data-style="modern"] .themeopt.on { outline: 2px solid var(--pri); }
+html[data-style="modern"] .welcome .sub { display: none; }
+html[data-style="modern"] .welcome h3 { letter-spacing: 0; font-size: 20px; }
+html[data-style="modern"] .welcome ol li::before { font-family: var(--sans); }
+html[data-style="modern"] .badge { border-radius: 999px; font-family: var(--sans); }
+html[data-style="modern"] .num { font-family: var(--sans); }
+html[data-style="modern"] .plabel { border: 0; box-shadow: 0 1px 6px rgba(0,0,0,.18); border-radius: 8px !important; }
+html[data-style="modern"] .wx { font-family: var(--sans); }
+html[data-style="modern"] .stepper b { font-family: var(--sans); }
+
+/* 地點照片 */
+.thumb { position: relative; flex: none; width: 46px; height: 46px; border-radius: 10px; background: var(--soft) center / cover no-repeat; box-shadow: inset 0 0 0 1px var(--hair); }
+html[data-style="classic"] .thumb { border-radius: var(--r); }
+.thumb i { position: absolute; right: -5px; bottom: -5px; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; border: 2px solid var(--card); }
+.thumb i .ic { width: 12px; height: 12px; stroke-width: 2.2; }
+.thumb.big { width: 60px; height: 60px; border-radius: 12px; }
+.stop .cat { width: 46px; height: 46px; border-radius: 10px; background: color-mix(in srgb, currentColor 12%, transparent); }
+html[data-style="classic"] .stop .cat { background: none; width: 24px; height: 24px; }
+.stop .cat .ic { width: 22px; height: 22px; }
+html[data-style="classic"] .stop .cat .ic { width: 20px; height: 20px; }
+.pop-photo { position: relative; margin: -12px -14px 10px; height: 130px; background: var(--soft) center / cover no-repeat; border-radius: var(--r) var(--r) 0 0; }
+html[data-style="modern"] .pop-photo { border-radius: 16px 16px 0 0; }
+.pop-photo .credit { position: absolute; right: 6px; bottom: 6px; font-size: 10px; color: #fff; background: rgba(0,0,0,.45); padding: 1px 6px; border-radius: 6px; text-decoration: none; }
+.leaflet-popup-content { min-width: 220px; }
+
+.navpick .btn { justify-content: flex-start; font-size: 16px; padding: 14px 16px; }

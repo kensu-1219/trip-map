@@ -336,3 +336,36 @@ test('多城市：每晚不同住宿 → 依住宿分配地點、起終點正確
   const b2 = C.unpackTrip(JSON.parse(JSON.stringify(C.packTrip(s))));
   assert.equal(b2.legModes['base>base-3'], 'drive');
 });
+
+test('照片：只採用「名稱相符且座標相近」的維基百科圖片', () => {
+  const place = { name: '淺草寺', lat: 35.7148, lng: 139.7967, cat: 'temple' };
+  const j = { query: { pages: {
+    1: { index: 1, title: '淺草寺', fullurl: 'https://zh.wikipedia.org/wiki/淺草寺', thumbnail: { source: 'https://upload.wikimedia.org/a/sensoji.jpg' }, coordinates: [{ lat: 35.7147, lon: 139.7966 }] },
+    2: { index: 2, title: '淺草寺 (台南)', thumbnail: { source: 'https://upload.wikimedia.org/b/other.jpg' }, coordinates: [{ lat: 23.0, lon: 120.2 }] },
+    3: { index: 3, title: '淺草', thumbnail: { source: 'https://upload.wikimedia.org/c/Asakusa_map.svg.png' }, coordinates: [{ lat: 35.71, lon: 139.79 }] },
+  } } };
+  const r = C.wikiPick(j, place, { maxDist: 3000 });
+  assert.equal(r.url, 'https://upload.wikimedia.org/a/sensoji.jpg');
+  // 同名但在別的城市 → 不採用
+  const far = { query: { pages: { 1: { title: '淺草寺', thumbnail: { source: 'https://upload.wikimedia.org/x.jpg' }, coordinates: [{ lat: 25, lon: 121 }] } } } };
+  assert.equal(C.wikiPick(far, place, { maxDist: 3000 }), null);
+  // 名稱不相符且沒有座標 → 不採用
+  const nocoord = { query: { pages: { 1: { title: '雷門', thumbnail: { source: 'https://upload.wikimedia.org/y.jpg' } } } } };
+  assert.equal(C.wikiPick(nocoord, place, {}), null);
+  // 非維基網域的圖片 → 不採用
+  const evil = { query: { pages: { 1: { title: '淺草寺', thumbnail: { source: 'https://evil.example/x.jpg' }, coordinates: [{ lat: 35.7148, lon: 139.7967 }] } } } };
+  assert.equal(C.wikiPick(evil, place, {}), null);
+  assert.deepEqual(C.wikiLangs('浅草寺カフェ'), ['ja', 'zh', 'en']);
+  assert.equal(C.sanitizePhoto({ src: 'wiki', url: 'javascript:alert(1)' }), null);
+  assert.equal(C.sanitizePhoto({ src: 'wiki', url: "https://upload.wikimedia.org/a').jpg" }), null);
+  assert.deepEqual(C.sanitizePhoto({ src: 'google', name: 'places/abc/photos/xyz' }), { src: 'google', name: 'places/abc/photos/xyz' });
+});
+
+test('Apple 地圖連結：交通方式對應 dirflg', () => {
+  const a = { lat: 35.7148, lng: 139.7967 }, b = { lat: 35.7101, lng: 139.8107, name: '東京晴空塔' };
+  assert.equal(C.appleDirUrl(a, b, 'walk'), 'https://maps.apple.com/?saddr=35.7148,139.7967&daddr=35.7101,139.8107&dirflg=w');
+  assert.ok(C.appleDirUrl(a, b, 'transit').endsWith('dirflg=r'));
+  assert.ok(C.appleDirUrl(a, b, 'drive').endsWith('dirflg=d'));
+  assert.ok(C.appleDirUrl(a, b, 'bike').endsWith('dirflg=c'));
+  assert.equal(C.applePlaceUrl(b), 'https://maps.apple.com/?ll=35.7101,139.8107&q=' + encodeURIComponent('東京晴空塔'));
+});

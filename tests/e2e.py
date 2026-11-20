@@ -68,6 +68,27 @@ def handle(route):
             {'travelMode': 'TRANSIT', 'transitDetails': {'stopCount': 4, 'transitLine': {'nameShort': '銀座線', 'color': '#f39700', 'vehicle': {'type': 'SUBWAY'}}, 'stopDetails': {'departureStop': {'name': '淺草'}, 'arrivalStop': {'name': '上野'}}}},
             {'travelMode': 'WALK', 'staticDuration': '180s'}]}]}]}
         return route.fulfill(status=200, content_type='application/json', headers={'Access-Control-Allow-Origin': '*'}, body=json.dumps(body))
+    if 'places.googleapis.com/v1/places:searchText' in url:
+        calls['gplaces'] = calls.get('gplaces', 0) + 1
+        return route.fulfill(status=200, content_type='application/json', headers={'Access-Control-Allow-Origin': '*'}, body=json.dumps({'places': []}))
+    if 'wikipedia.org/w/api.php' in url:
+        calls['wiki'] = calls.get('wiki', 0) + 1
+        from urllib.parse import urlparse, parse_qs
+        qs = parse_qs(urlparse(url).query)
+        q = qs.get('gsrsearch', [''])[0]
+        known = {'淺草寺': (35.7148, 139.7967), '東京晴空塔': (35.7101, 139.8107), '明治神宮': (35.6764, 139.6993), '東京鐵塔': (35.6586, 139.7454), '上野公園': (35.7156, 139.7745)}
+        pages = {}
+        if q in known:
+            la, lo = known[q]
+            pages['1'] = {'index': 1, 'title': q, 'fullurl': 'https://zh.wikipedia.org/wiki/' + q, 'thumbnail': {'source': 'https://upload.wikimedia.org/wikipedia/commons/thumb/test/' + str(abs(hash(q)) % 1000) + '.jpg'}, 'coordinates': [{'lat': la, 'lon': lo}]}
+        return route.fulfill(status=200, content_type='application/json', headers={'Access-Control-Allow-Origin': '*'}, body=json.dumps({'query': {'pages': pages}} if pages else {}))
+    if 'upload.wikimedia.org' in url:
+        calls['wikiimg'] = calls.get('wikiimg', 0) + 1
+        n = int(re.search(r'/(\d+)\.jpg', url).group(1)) if re.search(r'/(\d+)\.jpg', url) else 0
+        im = Image.new('RGB', (320, 240), ((n * 37) % 200 + 30, (n * 91) % 200 + 30, (n * 53) % 200 + 30))
+        d = ImageDraw.Draw(im)
+        d.ellipse([90, 50, 230, 190], fill=(250, 240, 220)); d.rectangle([0, 190, 320, 240], fill=(60, 90, 60))
+        b = io.BytesIO(); im.save(b, 'JPEG'); return route.fulfill(status=200, content_type='image/jpeg', body=b.getvalue())
     if 'overpass-api.de' in url:
         calls['overpass'] = calls.get('overpass', 0) + 1
         body = {'elements': [
@@ -277,6 +298,9 @@ with sync_playwright() as p:
     sp.click('[data-act=sample]'); sp.wait_for_timeout(2500)
     body = sp.inner_text('#tabBody')
     check('範例行程：12 個地點排成 3 天', sp.evaluate('TripApp.trip().places.every(p=>p.day>=1)') and sp.evaluate('TripApp.trip().places.length') == 12)
+    wait_js(sp, "TripApp.trip().places.filter(p=>p.photo).length >= 4", 15000); sp.wait_for_timeout(400)
+    check('地點照片：維基百科找到淺草寺、晴空塔等的照片', sp.evaluate("TripApp.trip().places.filter(p=>p.photo).length") >= 4 and sp.locator('.thumb').count() >= 3, str(sp.evaluate("TripApp.trip().places.filter(p=>p.photo).map(p=>p.name)")))
+    check('找不到照片的地點顯示分類圖示（不亂抓）', sp.evaluate("TripApp.trip().places.find(p=>p.name=='台場').photo") is None)
     check('時間表：顯示 09:00 出發與每站時間', '09:00 出發' in body and '回到住宿' in body and re.search(r'\d\d:\d\d–\d\d:\d\d', body) is not None)
     check('整天導航連結含中途點', 'waypoints=' in (sp.locator('.day-tools a').first.get_attribute('href') or ''))
     sp.fill('#dayStart', '08:00'); sp.dispatch_event('#dayStart', 'change'); sp.wait_for_timeout(300)
@@ -343,7 +367,7 @@ with sync_playwright() as p:
     # 另一趟旅程用不同主題
     vp.evaluate("(()=>{})()")
     vp.select_option('#tripSelect', index=0); vp.wait_for_timeout(200)
-    check('切換到另一趟旅程 → 主題回到該旅程設定', vp.evaluate('document.documentElement.dataset.theme') in ('parchment', 'relic'))
+    check('切換到另一趟旅程 → 主題回到該旅程設定', vp.evaluate('document.documentElement.dataset.theme') in ('clean', 'night'))
     vp.select_option('#tripSelect', index=1); vp.wait_for_timeout(200)
     check('切回範例旅程 → 霓虹主題', vp.evaluate('document.documentElement.dataset.theme') == 'neon')
     for th in ['washi', 'tide', 'relic']:
@@ -355,7 +379,7 @@ with sync_playwright() as p:
     vp.fill('#startDate', today); vp.dispatch_event('#startDate', 'change'); vp.wait_for_timeout(400)
     vp.reload(); vp.wait_for_selector('#tabBody'); vp.wait_for_timeout(1500)
     body = vp.inner_text('#tabBody')
-    check('今天模式：顯示「今天是 DAY 01」與下一站', '今天是 DAY 01' in body and '下一站' in body)
+    check('今天模式：顯示「今天是 DAY 01」與下一站', ('今天是第 1 天' in body or '今天是DAY01' in body.replace(' ', '')) and '下一站' in body)
     check('今天模式：自動只看今天', vp.evaluate('TripApp.S.ui.dayFilter') == 1)
     check('天氣：顯示預報（Open-Meteo）', vp.locator('.wx').count() >= 1 and '8°/14°' in vp.inner_text('.wx'), vp.inner_text('.wx') if vp.locator('.wx').count() else '')
     vp.screenshot(path=f'{OUT}/25_today_weather.png')
@@ -434,6 +458,25 @@ with sync_playwright() as p:
     txt = vp.evaluate('TripApp.tripText()')
     check('文字行程含每晚住宿', 'Day 2 晚上住：台場' in txt and '入住 台場' in txt)
     vp.screenshot(path=f'{OUT}/29_multi_hotel.png')
+    # v1.8：導航 App 選擇
+    vp.click('#tabs button[data-tab=plan]'); vp.wait_for_timeout(200)
+    nav = vp.locator('.leg a.navlink').first
+    nav.scroll_into_view_if_needed(); nav.click(); vp.wait_for_selector('.navpick')
+    ap = vp.get_attribute('.navpick [data-pick=apple]', 'href'); gg = vp.get_attribute('.navpick [data-pick=google]', 'href')
+    check('按導航 → 詢問 Apple 地圖或 Google 地圖', ap.startswith('https://maps.apple.com/?saddr=') and 'dirflg=' in ap and gg.startswith('https://www.google.com/maps/dir/'))
+    vp.screenshot(path=f'{OUT}/31_nav_choice.png')
+    vp.check('#navRemember')
+    with vctx.expect_page() as newp:
+        vp.click('.navpick [data-pick=apple]')
+    newp.value.close()
+    vp.wait_for_timeout(200)
+    check('記住選擇 Apple 地圖', vp.evaluate('TripApp.S.data.settings.navApp') == 'apple')
+    reqs = []
+    vctx.on('request', lambda r: reqs.append(r.url) if 'maps.apple.com' in r.url or 'google.com/maps' in r.url else None)
+    with vctx.expect_page() as newp2:
+        vp.locator('.leg a.navlink').first.click()
+    vp.wait_for_timeout(300); newp2.value.close()
+    check('之後按導航直接開 Apple 地圖（不再詢問）', any('maps.apple.com' in u for u in reqs) and vp.locator('.navpick').count() == 0, (reqs or [''])[0][:60])
     check('v1.3 頁面沒有錯誤', not verr, '; '.join(verr[:3]))
     vctx.close()
 
