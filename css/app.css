@@ -260,7 +260,6 @@ html[data-theme="washi"] .num { border-radius: 3px; }
    v1.3 元件
    ========================================================= */
 /* 地圖標記：菱形內是分類圖示，右上角是順序號碼 */
-html[data-theme="neon"] .pin .ic, html[data-theme="neon"] .pin span { color: #101012; }
 html[data-theme="neon"] .pin { border-color: #101012; } html[data-theme="neon"] .pin::before { border-top-color: #101012; }
 .pin.done { filter: grayscale(.85); opacity: .6; }
 .pin.done .ic { opacity: .9; }
@@ -327,3 +326,5 @@ html[data-theme="neon"] .pin { border-color: #101012; } html[data-theme="neon"] 
 .help-row .muted { font-size: 13px; }
 
 .plabel b { display: inline-block; min-width: 16px; margin-right: 4px; padding: 0 3px; border-radius: 8px; background: var(--lc, var(--ink)); color: #fff; font: 700 10px/15px var(--mono); text-align: center; }
+
+html[data-theme="relic"] .stop .cat, html[data-theme="neon"] .stop .cat { filter: brightness(1.6) saturate(1.1); }

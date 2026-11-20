@@ -243,6 +243,12 @@
   }
 
   /* ---------- 地點分類 ---------- */
+  // 每個分類一個顏色（大地色系，彼此可區分）
+  const CAT_COLOR = {
+    food: '#c4583c', cafe: '#b07a3a', bar: '#8e4a7a', station: '#3c5a86', airport: '#4a7fa3', hotel: '#2f2c25',
+    shopping: '#c2902f', market: '#cf6e2e', museum: '#6d5a8e', temple: '#b3412f', castle: '#7a5a3c', park: '#5f7f3a',
+    beach: '#2f8a8a', view: '#3f6e78', theme: '#c0507a', zoo: '#8a6a3b', onsen: '#a3524a', landmark: '#5b6e8a', other: '#7a7563',
+  };
   const CATS = {
     food: { label: '餐廳', emoji: '🍜' }, cafe: { label: '咖啡甜點', emoji: '☕' }, bar: { label: '酒吧夜生活', emoji: '🍸' },
     station: { label: '車站', emoji: '🚉' }, airport: { label: '機場', emoji: '✈️' }, hotel: { label: '住宿', emoji: '🏨' },
@@ -954,6 +960,6 @@
     parseGeoJSON, parseTakeoutCSV, parseKML, newTrip, sanitizeTrip, sanitizePlace, mergePlaces,
     MODES, estimateLeg, suggestMode, gmapsDirUrl, gmapsPlaceUrl, gmapsDayUrl, timeline, hm, toMin, centroid, balancedClusters,
     orderStops, planDays, pathLen, dayStops, legKey, parseOsrm, decodePolyline, parseGoogleRoute,
-    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel,
+    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, CAT_COLOR, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel,
   };
 });

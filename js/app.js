@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.7.3';
+  const VERSION = '1.7.4';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -93,7 +93,7 @@
       if (dim(p) && t.places.length > 300) continue;
       const num = p.day ? String(p.order + 1) : '';
       const cls = (dim(p) ? 'dim ' : '') + (p.done ? 'done' : '');
-      const m = L.marker([p.lat, p.lng], { icon: pinIcon(dc(p.day), '', cls, catIc(p.cat)), title: p.name, zIndexOffset: dim(p) ? -100 : 0 });
+      const m = L.marker([p.lat, p.lng], { icon: pinIcon(C.CAT_COLOR[p.cat] || C.CAT_COLOR.other, '', cls, catIc(p.cat)), title: p.name, zIndexOffset: dim(p) ? -100 : 0 });
       m.bindPopup(() => popupHtml(p), { maxWidth: 260 });
       if (!dim(p) && t.places.length <= 300) m.bindTooltip((num ? '<b style="--lc:' + dc(p.day) + '">' + num + '</b>' : '') + esc(p.name.length > 14 ? p.name.slice(0, 13) + '…' : p.name), { permanent: true, direction: 'right', offset: [16, -18], className: 'plabel' });
       m.addTo(markerLayer);
@@ -310,7 +310,7 @@
     return '<div class="stop' + (p.done ? ' is-done' : '') + (reorder ? ' can-drag' : '') + '" data-id="' + p.id + '">' +
       (reorder ? '<span class="grip" title="按住拖曳排序">' + I('grip') + '</span>' : '') +
       '<span class="num" style="--c:' + dc(unassigned ? 0 : p.day) + '"><span>' + (unassigned ? '·' : p.order + 1) + '</span></span>' +
-      '<span class="cat" title="' + C.CATS[p.cat].label + '">' + catIc(p.cat) + '</span>' +
+      '<span class="cat" style="color:' + C.CAT_COLOR[p.cat] + '" title="' + C.CATS[p.cat].label + '">' + catIc(p.cat) + '</span>' +
       '<span class="grow"><a href="#" data-act="focus" data-id="' + p.id + '">' + esc(p.name) + '</a>' + (p.locked ? ' <span title="已鎖定在這天" class="muted">' + I('lock') + '</span>' : '') +
       '<br>' + (tm ? '<span class="time">' + C.hm(tm.arrive) + '–' + C.hm(tm.depart) + '</span> ' : '') +
       '<span class="muted">停留 ' + C.fmtDur((p.stay || 0) * 60) + (p.cost ? ' · ' + cur + fmtMoney(p.cost) : '') + (p.note ? ' · ' + esc(p.note.slice(0, 40)) : '') + '</span>' +
@@ -356,7 +356,7 @@
       Object.keys(C.CATS).filter((k) => counts[k]).map((k) => '<button class="chip ic-chip' + (cf === k ? ' on' : '') + '" data-act="catFilter" data-c="' + k + '" title="' + C.CATS[k].label + '">' + catIc(k) + ' ' + counts[k] + '</button>').join('') + '</div>';
     const shown = list.slice(0, 300);
     h += shown.map((p) => '<div class="stop' + (p.done ? ' is-done' : '') + '" data-id="' + p.id + '"><span class="num" style="--c:' + dc(p.day) + '"><span>' + (p.day ? p.day : '·') + '</span></span>' +
-      '<span class="cat">' + catIc(p.cat) + '</span>' +
+      '<span class="cat" style="color:' + C.CAT_COLOR[p.cat] + '">' + catIc(p.cat) + '</span>' +
       '<span class="grow"><a href="#" data-act="focus" data-id="' + p.id + '">' + esc(p.name) + '</a><br><span class="muted">' + C.CATS[p.cat].label + (p.hours ? ' · ' + esc(p.hours) : '') + (p.note || p.address ? ' · ' + esc((p.note || p.address || '').slice(0, 50)) : '') + '</span></span>' +
       '<a class="icon-btn sm" href="' + esc(C.gmapsPlaceUrl(p)) + '" target="_blank" rel="noopener" title="在 Google 地圖開啟">' + I('ext') + '</a>' +
       '<button class="icon-btn sm" data-act="edit" data-id="' + p.id + '">' + I('edit') + '</button></div>').join('');
