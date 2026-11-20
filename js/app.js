@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.11.0';
+  const VERSION = '1.11.1';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1839,7 +1839,9 @@
     handleIncoming();
     startSync();
     if ('serviceWorker' in navigator && location.protocol === 'https:') {
-      navigator.serviceWorker.register('sw.js').then((reg) => {
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+        // 從背景叫回來時檢查有沒有新版
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
         reg.addEventListener('updatefound', () => {
           const nw = reg.installing;
           if (nw) nw.addEventListener('statechange', () => {

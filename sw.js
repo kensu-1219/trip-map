@@ -1,5 +1,5 @@
 /* Service worker：程式離線可開、看過的地圖圖磚離線可看 */
-const VERSION = 'v1.11.0';
+const VERSION = 'v1.11.1';
 const SHELL = 'shell-' + VERSION;
 const TILES = 'tiles-v1';
 const MAX_TILES = 3000;
@@ -33,7 +33,8 @@ self.addEventListener('fetch', (e) => {
   }
   // 自己的檔案：網路優先（拿到新版），離線時用快取
   if (url.origin === self.location.origin) {
-    e.respondWith(fetch(e.request).then((r) => {
+    // 一律向伺服器確認（cache: 'no-cache'），避免瀏覽器快取讓新版晚 10 分鐘才出現
+    e.respondWith(fetch(new Request(url.href, { cache: 'no-cache', credentials: 'same-origin' })).then((r) => {
       if (r.ok) { const cp = r.clone(); caches.open(SHELL).then((c) => c.put(e.request, cp)); }
       return r;
     }).catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match('index.html'))));
