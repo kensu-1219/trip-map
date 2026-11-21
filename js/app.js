@@ -88,7 +88,10 @@
     mlReady.catch(() => { mlReady = null; });
     return mlReady;
   }
-  function removeVector() { document.documentElement.classList.remove('vec-ready'); if (vecLayer) { map.removeLayer(vecLayer); vecLayer = null; vecTheme = ''; } }
+  function removeVector() {
+    document.documentElement.classList.remove('vec-ready');
+    if (vecLayer) { map.removeLayer(vecLayer); vecLayer = null; vecTheme = ''; if (map.attributionControl) map.attributionControl.removeAttribution(window.TripMapStyle.ATTR); }
+  }
   function setRaster(k) {
     if (tileLayer && rasterKey === k) return;
     const t = TILES[k];
@@ -107,6 +110,7 @@
       removeVector();
       const layer = L.maplibreGL({ style: V.build(th), attribution: V.ATTR, interactive: false, pane: 'tilePane', attributionControl: false });
       layer.addTo(map); vecLayer = layer; vecTheme = th;
+      if (map.attributionControl) map.attributionControl.addAttribution(V.ATTR);
       const ml = layer.getMaplibreMap();
       const pats = V.patterns(th);
       ml.on('styleimagemissing', (e) => { if (pats[e.id] && !ml.hasImage(e.id)) ml.addImage(e.id, pats[e.id], { pixelRatio: 2 }); });
@@ -2048,7 +2052,7 @@
     // 旅行中：預設只看今天
     { const d = todayIndex(trip()); if (d) { S.ui.dayFilter = d; renderAll(true); } }
     window.addEventListener('online', () => { S.requested.clear(); scheduleRender(); });
-    window.TripApp = { S, trip, renderAll, C, tripText: () => tripText(trip()), undo }; // 方便除錯與測試
+    window.TripApp = { S, trip, renderAll, C, tripText: () => tripText(trip()), undo, get map() { return map; } }; // 方便除錯與測試
   }
   start();
 })();
