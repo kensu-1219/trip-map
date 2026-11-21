@@ -430,3 +430,28 @@ test('cleanKey 去掉手機貼上的雜字元', () => {
   assert.strictEqual(C.cleanKey(' ＡＩza​SyX-_9 \n'), 'AIzaSyX-_9');
   assert.strictEqual(C.cleanKey(null), '');
 });
+
+test('機場：第 1 天從抵達機場出發、最後一天到出發機場；抵達日排較少點', () => {
+  const t = C.newTrip('北海道');
+  t.days = 4; t.dayStart = '09:00';
+  t.base = C.sanitizePlace({ name: '札幌飯店', lat: 43.0653, lng: 141.351, id: 'base', day: 0 });
+  t.arrive = C.sanitizePlace({ name: '新千歲空港', lat: 42.7752, lng: 141.6923, id: 'arrive', day: 0, cat: 'airport' });
+  t.depart = t.arrive; t.arriveTime = '15:00'; t.departTime = '17:00';
+  const pts = [];
+  for (let i = 0; i < 16; i++) pts.push(C.sanitizePlace({ name: 'P' + i, lat: 43.0 + (i % 4) * 0.02, lng: 141.3 + Math.floor(i / 4) * 0.02 }));
+  t.places = pts;
+  assert.strictEqual(C.dayEnds(t, 1).start.name, '新千歲空港');
+  assert.strictEqual(C.dayEnds(t, 1).end.name, '札幌飯店');
+  assert.strictEqual(C.dayEnds(t, 4).start.name, '札幌飯店');
+  assert.strictEqual(C.dayEnds(t, 4).end.name, '新千歲空港');
+  assert.strictEqual(C.dayStartTime(t, 1), '16:00');
+  assert.strictEqual(C.dayStartTime(t, 2), '09:00');
+  assert.strictEqual(C.departDeadline(t), 15 * 60);
+  const planned = C.planDays(t);
+  const n = (d) => planned.filter((p) => p.day === d).length;
+  assert.ok(n(1) < n(2) && n(1) < n(3), 'day1 應較少：' + [1, 2, 3, 4].map(n));
+  assert.ok(n(4) < n(2), 'day4 應較少：' + [1, 2, 3, 4].map(n));
+  assert.strictEqual(n(1) + n(2) + n(3) + n(4), 16);
+  const back = C.sanitizeTrip(JSON.parse(JSON.stringify(t)));
+  assert.strictEqual(back.arrive.cat, 'airport'); assert.strictEqual(back.departTime, '17:00');
+});

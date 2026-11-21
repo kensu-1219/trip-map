@@ -55,7 +55,7 @@ def handle(route):
         calls['nominatim'] += 1
         from urllib.parse import urlparse, parse_qs
         q = parse_qs(urlparse(url).query).get('q', [''])[0]
-        db = {'東京晴空塔': (35.7101, 139.8107), '清水寺': (34.9949, 135.7850), '祇園': (35.0037, 135.7788), '一蘭 拉麵 新宿店': (35.6909, 139.7027)}
+        db = {'東京晴空塔': (35.7101, 139.8107), '清水寺': (34.9949, 135.7850), '祇園': (35.0037, 135.7788), '一蘭 拉麵 新宿店': (35.6909, 139.7027), '羽田機場': (35.5494, 139.7798)}
         res = []
         for k, (la, lo) in db.items():
             if k in q or q in k:
@@ -228,6 +228,22 @@ with sync_playwright() as p:
     page.click('[data-act=filter][data-d="0"]')
     page.click('[data-act=autoplan]'); page.click('[data-mact=ok]'); page.wait_for_timeout(300)
     check('重新自動排程後鎖定點仍在 Day 1', page.evaluate(f'TripApp.trip().places.find(x=>x.id=="{pid}").day') == 1)
+
+    # 7b) 去程／回程機場
+    page.click('[data-act=setAirport][data-k=arrive]')
+    page.fill('#aTime', '15:00'); page.fill('#aQ', '羽田機場'); page.click('[data-mact=search]'); page.wait_for_timeout(800)
+    page.click('[data-mact=ok]'); page.wait_for_timeout(300)
+    page.click('[data-act=setAirport][data-k=depart]')
+    page.fill('#aTime', '17:00'); page.click('[data-mact=same]'); page.wait_for_timeout(300)
+    page.click('[data-act=autoplan]'); page.click('[data-mact=ok]'); page.wait_for_timeout(1200)
+    d1 = page.locator('.day[data-day="1"]').inner_text(); d3 = page.locator('.day[data-day="3"]').inner_text()
+    check('Day 1 從羽田出發（落地 15:00 → 16:00 出關）', '羽田機場' in d1.split('\n')[1] + d1 and '16:00 出關' in d1 and '15:00 落地' in d1, d1.replace('\n', ' ')[:80])
+    check('最後一天結束在羽田（17:00 起飛）', '到機場' in d3 and '17:00 起飛' in d3)
+    n = page.evaluate('[1,2,3].map(d=>TripApp.C.dayStops(TripApp.trip(),d).length)')
+    check('抵達日排的點比較少', n[0] < n[1], str(n))
+    page.screenshot(path=f'{OUT}/08b_airports.png')
+    page.evaluate("(()=>{const t=TripApp.trip();t.arrive=null;t.depart=null;t.arriveTime='';t.departTime='';})()")
+    page.click('[data-act=filter][data-d="0"]')
 
     # 8) 量距離（無 Google 金鑰）
     page.click('#tabs button[data-tab=measure]')

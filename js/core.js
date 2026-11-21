@@ -645,6 +645,11 @@
     out.dayStart = /^([01]\d|2[0-3]):[0-5]\d$/.test(t.dayStart || '') ? t.dayStart : '09:00';
     if (Number.isFinite(+t.lastBackup)) out.lastBackup = +t.lastBackup;
     out.base = t.base ? sanitizePlace({ ...t.base, id: 'base', day: 0 }) : null;
+    const hhmm = (v) => (/^([01]\d|2[0-3]):[0-5]\d$/.test(v || '') ? v : '');
+    out.arrive = t.arrive ? sanitizePlace({ ...t.arrive, id: 'arrive', day: 0, cat: 'airport' }) : null;
+    out.depart = t.depart ? sanitizePlace({ ...t.depart, id: 'depart', day: 0, cat: 'airport' }) : null;
+    out.arriveTime = out.arrive ? hhmm(t.arriveTime) : '';
+    out.departTime = out.depart ? hhmm(t.departTime) : '';
     out.dayBase = {};
     if (t.dayBase && typeof t.dayBase === 'object') {
       for (const [k, v] of Object.entries(t.dayBase)) {
@@ -866,12 +871,28 @@
   function nightHotel(trip, d) { return (trip.dayBase && trip.dayBase[d]) || trip.base || null; }
   /** 第 d 天從哪出發、回到哪：前一晚的住宿 → 今晚的住宿 */
   function dayEnds(trip, d) {
-    const end = nightHotel(trip, d);
-    const start = d > 1 ? nightHotel(trip, d - 1) || end : nightHotel(trip, 1);
+    const days = Math.max(1, trip.days | 0);
+    let end = nightHotel(trip, d);
+    let start = d > 1 ? nightHotel(trip, d - 1) || end : nightHotel(trip, 1);
+    // 去程：第 1 天從抵達機場出發；回程：最後一天結束在出發機場
+    if (d === 1 && trip.arrive) start = trip.arrive;
+    if (d === days && trip.depart) end = trip.depart;
     return { start, end };
+  }
+  const CLEAR_MIN = 60;   // 落地到出關
+  const CHECKIN_MIN = 120; // 起飛前要到機場
+  /** 第 d 天幾點出門：第 1 天有抵達時間 → 落地 + 1 小時 */
+  function dayStartTime(trip, d) {
+    if (d === 1 && trip.arrive && trip.arriveTime) return hm(toMin(trip.arriveTime) + CLEAR_MIN);
+    return trip.dayStart || '09:00';
+  }
+  /** 最後一天最晚要到機場的時間（分鐘），沒設回程班機則 null */
+  function departDeadline(trip) {
+    return trip.depart && trip.departTime ? toMin(trip.departTime) - CHECKIN_MIN : null;
   }
   const multiHotel = (trip) => !!trip.dayBase && Object.keys(trip.dayBase).some((k) => trip.dayBase[k]);
 
+  const range0 = (n) => Array.from({ length: n }, (_, i) => i);
   function planDays(trip) {
     const days = Math.max(1, trip.days | 0);
     const places = trip.places.map((p) => ({ ...p }));
@@ -879,8 +900,17 @@
     const lockedCount = new Array(days).fill(0);
     places.forEach((p) => { if (p.locked && p.day >= 1 && p.day <= days) lockedCount[p.day - 1]++; });
     const total = places.length;
-    const target = Math.ceil(total / days);
-    const caps = lockedCount.map((c) => Math.max(0, target - c));
+    // 每天可用時間：抵達日（落地後才開始）、回程日（要提早到機場）會比較短
+    const normal = Math.max(240, 20 * 60 - toMin(trip.dayStart || '09:00'));
+    const w = Array.from({ length: days }, (_, d) => {
+      let avail = normal;
+      if (d === 0 && trip.arrive && trip.arriveTime) avail = Math.min(avail, 20 * 60 - toMin(dayStartTime(trip, 1)));
+      const dl = departDeadline(trip);
+      if (d === days - 1 && dl != null) avail = Math.min(avail, dl - 60 - toMin(dayStartTime(trip, days)));
+      return Math.max(0.15, Math.min(1, avail / normal));
+    });
+    const sw = w.reduce((a, b) => a + b, 0);
+    const caps = lockedCount.map((c, d) => Math.max(0, Math.ceil(total * w[d] / sw) - c));
     // 容量總和不足時補足
     let deficit = free.length - caps.reduce((a, b) => a + b, 0);
     for (let j = 0; deficit > 0; j = (j + 1) % days) { caps[j]++; deficit--; }
@@ -934,7 +964,10 @@
       const gCent = groups.map((g) => centroid(free.filter((_, i) => assign[i] === g)));
       const dayCent = Array.from({ length: days }, (_, d) => {
         const lk = places.filter((p) => p.locked && p.day === d + 1);
-        return lk.length ? centroid(lk) : null;
+        if (lk.length) return centroid(lk);
+        if (d === 0 && trip.arrive && days > 1) return trip.arrive;
+        if (d === days - 1 && trip.depart && days > 1) return trip.depart;
+        return null;
       });
       const map = {}; const usedDays = new Set();
       groups.forEach((g, gi) => {
@@ -954,6 +987,27 @@
         map[g] = nextDay; usedDays.add(nextDay);
       }
       free.forEach((p, i) => { p.day = map[assign[i]] + 1; });
+      // 群組大小與當天容量不一定吻合（抵達日／回程日較短）：把超量的點移到最近、還有空位的天
+      const cnt = (d) => places.filter((p) => p.day === d).length;
+      const cap = (d) => caps[d - 1] + lockedCount[d - 1];
+      for (let guard = 0; guard < free.length * 2; guard++) {
+        let over = 0;
+        for (let d = 1; d <= days; d++) if (cnt(d) > cap(d)) { over = d; break; }
+        if (!over) break;
+        const cents = range0(days).map((d) => { const ps = places.filter((p) => p.day === d + 1); return ps.length ? centroid(ps) : null; });
+        let best = null, bc = Infinity;
+        for (const p of free) {
+          if (p.day !== over) continue;
+          for (let d = 1; d <= days; d++) {
+            if (d === over || cnt(d) >= cap(d)) continue;
+            const c = cents[d - 1] || p;
+            const cost = haversine(p, c) - haversine(p, cents[over - 1]);
+            if (cost < bc) { bc = cost; best = [p, d]; }
+          }
+        }
+        if (!best) break;
+        best[0].day = best[1];
+      }
     }
     // 每天排序
     for (let d = 1; d <= days; d++) {
@@ -1174,6 +1228,6 @@
     cleanKey, parseGeoJSON, parseTakeoutCSV, parseKML, newTrip, sanitizeTrip, sanitizePlace, mergePlaces,
     MODES, estimateLeg, suggestMode, gmapsDirUrl, gmapsPlaceUrl, gmapsDayUrl, appleDirUrl, applePlaceUrl, timeline, hm, toMin, centroid, balancedClusters,
     orderStops, planDays, pathLen, dayStops, legKey, parseOsrm, decodePolyline, parseGoogleRoute,
-    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, CAT_COLOR, BOOK_TYPES, sanitizeBooking, bookingsOn, sanitizeExpense, settle, parseItineraryText, cleanPlaceName, wikiPick, wikiLangs, PHOTO_GEO_CATS, sanitizePhoto, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel,
+    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, CAT_COLOR, BOOK_TYPES, sanitizeBooking, bookingsOn, sanitizeExpense, settle, parseItineraryText, cleanPlaceName, wikiPick, wikiLangs, PHOTO_GEO_CATS, sanitizePhoto, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel, dayStartTime, departDeadline, CLEAR_MIN, CHECKIN_MIN,
   };
 });
