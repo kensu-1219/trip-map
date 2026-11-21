@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.12.0';
+  const VERSION = '1.13.0';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -366,13 +366,14 @@
       '<label class="field">出發日 <input type="date" id="startDate" value="' + esc(t.startDate) + '"></label>' +
       '<label class="field">每天 <input type="time" id="dayStart" value="' + esc(t.dayStart || '09:00') + '" step="900"> 出門</label>' +
       '</div>' + installBanner() +
-      '<div class="row gap base-row">' + I('hotel') + ' <span class="grow">' + (t.base ? '<b>' + esc(t.base.name) + '</b> <span class="muted">' + (C.multiHotel(t) ? '預設住宿（部分天數另有設定）' : '每天從這裡出發、回來') + '</span>' : '<span class="muted">未設定住宿（設定後每天會從住宿出發）</span>') + '</span><button class="btn sm" data-act="setBase">' + (t.base ? '更換' : '設定') + '</button></div>' +
+      '<div class="row gap base-row">' + I('hotel') + ' <span class="grow">' + (t.base ? '<b>' + esc(t.base.name) + '</b> <span class="muted">' + (C.multiHotel(t) ? '預設住宿（部分天數另有設定）' : '每天從這裡出發、回來') + '</span>' : (C.multiHotel(t) ? '<span class="muted">各晚住宿已分別設定（每天最後一列的「今晚」可改）；這裡可再設一個預設住宿</span>' : '<span class="muted">未設定住宿（設定後每天會從住宿出發）</span>')) + '</span><button class="btn sm" data-act="setBase">' + (t.base ? '更換' : '設定') + '</button></div>' +
       airportRow(t, 'arrive') + airportRow(t, 'depart') +
-      '<button class="btn primary block" data-act="autoplan"' + (t.places.length ? '' : ' disabled') + '>' + I('auto') + ' 自動排行程 <span style="opacity:.7;font-weight:400">· 依遠近分 ' + t.days + ' 天</span></button>';
+      '<div class="row gap"><button class="btn primary grow" data-act="autoplan"' + (t.places.length ? '' : ' disabled') + '>' + I('auto') + ' 自動排行程 <span style="opacity:.7;font-weight:400">· 依遠近分 ' + t.days + ' 天</span></button>' +
+      (t.prevPlan ? '<button class="btn" data-act="restorePlan" title="回到按「自動排行程」之前的分天與順序">' + I('undo') + ' 復原排程</button>' : '') + '</div>';
     if (!t.places.length) return h + welcomeHtml();
     h += todayCard(t);
     h += sec('// Route · 每日路線') + '<div class="row gap route-bar"><div class="chips grow">' + '<button class="chip' + (f ? '' : ' on') + '" data-act="filter" data-d="0"><span class="en">ALL</span><span class="zh">全部</span></button>' +
-      range(t.days).map((d) => '<button class="chip' + (f === d ? ' on' : '') + '" data-act="filter" data-d="' + d + '" style="--c:' + dc(d) + '"><span class="en">D' + String(d).padStart(2, '0') + '</span><span class="zh">第 ' + d + ' 天</span></button>').join('') + '</div>' +
+      range(t.days).map((d) => '<button class="chip' + (f === d ? ' on' : '') + '" data-act="filter" data-d="' + d + '" style="--c:' + dc(d) + '>' + (t.days > 5 ? '<span class="en">D' + d + '</span><span class="zh">第' + d + '天</span>' : '<span class="en">D' + String(d).padStart(2, '0') + '</span><span class="zh">第 ' + d + ' 天</span>') + '</button>').join('') + '</div>' +
       '<button class="btn sm' + (S.ui.reorder ? ' primary' : '') + '" data-act="reorder">' + I('swap') + (S.ui.reorder ? ' 完成' : ' 調整順序') + '</button></div>';
     const pcost = t.places.reduce((a, p) => a + (p.cost || 0), 0), bcost = (t.bookings || []).reduce((a, b) => a + (b.cost || 0), 0);
     if (pcost + bcost) h += '<div class="muted small">' + I('money') + ' 預估總花費 ' + (t.currency ? esc(t.currency) + ' ' : '') + fmtMoney(pcost + bcost) + (bcost ? '（含預訂 ' + fmtMoney(bcost) + '）' : '') + '</div>';
@@ -440,7 +441,7 @@
       (reorder ? '<span class="grip" title="按住拖曳排序">' + I('grip') + '</span>' : '') +
       '<span class="num" style="--c:' + dc(unassigned ? 0 : p.day) + '"><span>' + (unassigned ? '·' : p.order + 1) + '</span></span>' +
       thumb(p) +
-      '<span class="grow"><a href="#" data-act="focus" data-id="' + p.id + '">' + esc(p.name) + '</a>' + (p.locked ? ' <span title="已鎖定在這天" class="muted">' + I('lock') + '</span>' : '') +
+      '<span class="grow"><a href="#" data-act="focus" data-id="' + p.id + '">' + esc(p.name) + '</a>' + (p.meal ? ' <span class="mealtag">' + (p.meal === 'lunch' ? '午餐' : '晚餐') + '</span>' : '') + (p.locked ? ' <span title="已鎖定在這天" class="muted">' + I('lock') + '</span>' : '') +
       '<br>' + (tm ? '<span class="time">' + C.hm(tm.arrive) + '–' + C.hm(tm.depart) + '</span> ' : '') +
       '<span class="muted">停留 ' + C.fmtDur((p.stay || 0) * 60) + (p.cost ? ' · ' + cur + fmtMoney(p.cost) : '') + (p.note ? ' · ' + esc(p.note.slice(0, 40)) : '') + '</span>' +
       (warn ? '<br><span class="warnline">' + I('warn') + ' ' + esc(warn) + '</span>' : '') + '</span>' +
@@ -1161,9 +1162,12 @@
       const noCAll = r.places.filter((p) => p.lat == null);
       const noC = noCAll.filter((p) => !known.has(p.name.trim()));
       const dupNames = noCAll.length - noC.length;
-      const res = addPlaces(withC, { silent: true });
+      const tg = C.applyNoteTags(t0, withC);
+      const res = addPlaces(tg.places, { silent: true });
       const dupN = res.dup.length + dupNames;
-      toast('「' + f.name + '」：加入 ' + res.added.length + ' 個' + (dupN ? '，重複 ' + dupN + ' 個略過' : '') + (noC.length ? '，' + noC.length + ' 個查座標中' : ''), 5000);
+      const extra = [tg.hotels ? tg.hotels + ' 間住宿已設定晚數' : '', tg.meals ? tg.meals + ' 個標了午／晚餐' : '', tg.days ? tg.days + ' 個指定了天' : ''].filter(Boolean).join('、');
+      if (tg.hotels) { save(); renderAll(); }
+      toast('「' + f.name + '」：加入 ' + res.added.length + ' 個' + (dupN ? '，重複 ' + dupN + ' 個略過' : '') + (noC.length ? '，' + noC.length + ' 個查座標中' : '') + (extra ? '；' + extra + '（按「自動排行程」就會照著排）' : ''), 8000);
       if (noC.length) geocodeBatch(noC);
     }
   }
@@ -1219,6 +1223,7 @@
     const t = trip();
     const run = () => {
       snapshot();
+      t.prevPlan = t.places.map((p) => ({ id: p.id, day: p.day, order: p.order, locked: p.locked }));
       t.places = C.planDays(t);
       save(); S.ui.dayFilter = 0; renderAll(true);
       toast('已排成 ' + t.days + ' 天，手動移動的會被鎖定', 6000, undoAct);
@@ -1227,6 +1232,16 @@
       openModal('<h3>重新排行程？</h3><p>會重新安排所有<b>沒有鎖定</b>的地點。鎖定的地點維持在原本那天。</p>' +
         '<div class="row gap end"><button class="btn" data-mact="close">取消</button><button class="btn primary" data-mact="ok">重新排</button></div>', { ok: () => { closeModal(); run(); } });
     } else run();
+  }
+
+  function restorePlan() {
+    const t = trip();
+    if (!t.prevPlan) return;
+    snapshot();
+    const m = new Map(t.prevPlan.map((x) => [x.id, x]));
+    t.places.forEach((p) => { const x = m.get(p.id); if (x) { p.day = x.day; p.order = x.order; p.locked = x.locked; } });
+    t.prevPlan = null;
+    save(); renderAll(true); toast('已回到自動排程之前的安排', 5000, undoAct);
   }
 
   function editPlace(id) {
@@ -1242,6 +1257,7 @@
       '<div class="row gap" style="margin-top:8px"><label class="field grow">' + I('money') + ' 預估花費<input id="eCost" type="number" min="0" step="1" inputmode="decimal" value="' + (p.cost || '') + '" placeholder="0"></label><span class="muted">' + esc(t.currency || '') + '</span></div>' +
       '<div class="row gap"><label class="field">停留（分鐘）<input id="eStay" type="number" min="0" max="1440" step="15" value="' + p.stay + '"></label>' +
       '<label class="field">天數 <select id="eDay"><option value="0">未排</option>' + range(t.days).map((d) => '<option value="' + d + '"' + (p.day === d ? ' selected' : '') + '>Day ' + d + '</option>').join('') + '</select></label></div>' +
+      '<label class="field">用餐 <select id="eMeal"><option value="">不是用餐</option><option value="lunch"' + (p.meal === 'lunch' ? ' selected' : '') + '>午餐</option><option value="dinner"' + (p.meal === 'dinner' ? ' selected' : '') + '>晚餐</option></select></label>' +
       '<label class="check"><input type="checkbox" id="eLock"' + (p.locked ? ' checked' : '') + '> 鎖定在這天（自動排行程不會移動）</label>' +
       '<label class="check"><input type="checkbox" id="eDone"' + (p.done ? ' checked' : '') + '> 已去過（打卡）</label>' +
       '<div class="muted small">座標 ' + p.lat.toFixed(6) + ', ' + p.lng.toFixed(6) + '</div>' +
@@ -1254,6 +1270,7 @@
         if (nd !== p.day) { p.day = nd; p.order = 999; for (let k = 1; k <= t.days; k++) C.dayStops(t, k).forEach((s, i) => { s.order = i; }); }
         p.locked = $('#eLock').checked && p.day > 0;
         p.done = $('#eDone').checked;
+        p.meal = $('#eMeal').value === 'lunch' || $('#eMeal').value === 'dinner' ? $('#eMeal').value : '';
         const sel = $('#eCat .catopt.on'); if (sel) p.cat = sel.dataset.cat;
         p.hours = $('#eHours').value.trim().slice(0, 60);
         const cst = parseFloat($('#eCost').value); p.cost = Number.isFinite(cst) && cst > 0 ? cst : 0;
@@ -1771,6 +1788,7 @@
         case 'days': t.days = Math.max(1, Math.min(60, t.days + +el.dataset.d)); if (S.ui.dayFilter > t.days) S.ui.dayFilter = 0; save(); renderAll(); break;
         case 'filter': S.ui.dayFilter = +el.dataset.d; renderPanel(true); renderMap(true); break;
         case 'autoplan': autoplan(); break;
+        case 'restorePlan': restorePlan(); break;
         case 'setBase': setBaseModal(0); break;
         case 'setAirport': setAirportModal(el.dataset.k); break;
         case 'dayHotel': setBaseModal(+el.dataset.d); break;

@@ -631,7 +631,7 @@
       order: Number.isFinite(+p.order) ? +p.order : 0,
       locked: !!p.locked, stay: Number.isFinite(+p.stay) ? Math.max(0, Math.min(1440, +p.stay)) : 60,
       cat: CATS[p.cat] ? p.cat : guessCat(p.name, p.address),
-      done: !!p.done, hours: s(p.hours, 60),
+      done: !!p.done, hours: s(p.hours, 60), meal: p.meal === 'lunch' || p.meal === 'dinner' ? p.meal : '',
       hoursWeek: Array.isArray(p.hoursWeek) && p.hoursWeek.length === 7 ? p.hoursWeek.map((x) => s(x, 60)) : null,
       photo: sanitizePhoto(p.photo), photoTry: Number.isFinite(+p.photoTry) ? +p.photoTry : 0, cost: Number.isFinite(+p.cost) && +p.cost > 0 ? Math.min(1e9, +p.cost) : 0,
     };
@@ -650,6 +650,7 @@
     out.depart = t.depart ? sanitizePlace({ ...t.depart, id: 'depart', day: 0, cat: 'airport' }) : null;
     out.arriveTime = out.arrive ? hhmm(t.arriveTime) : '';
     out.departTime = out.depart ? hhmm(t.departTime) : '';
+    out.prevPlan = Array.isArray(t.prevPlan) ? t.prevPlan.slice(0, 5000).filter((x) => x && typeof x.id === 'string').map((x) => ({ id: x.id.slice(0, 40), day: Number.isInteger(x.day) && x.day >= 0 && x.day <= 60 ? x.day : 0, order: +x.order || 0, locked: !!x.locked })) : null;
     out.dayBase = {};
     if (t.dayBase && typeof t.dayBase === 'object') {
       for (const [k, v] of Object.entries(t.dayBase)) {
@@ -683,7 +684,7 @@
       if (p.lat == null) continue;
       const d = all.find((e) => haversine(e, p) < 80 && (e.name === p.name || haversine(e, p) < 15));
       if (d) { dup.push(p); continue; }
-      const np = sanitizePlace({ ...p, id: uid(), day: 0 });
+      const np = sanitizePlace({ ...p, id: uid(), day: p.locked && p.day ? p.day : 0, locked: !!(p.locked && p.day) });
       if (np) { all.push(np); added.push(np); }
     }
     return { places: all, added, dup };
@@ -893,6 +894,104 @@
   const multiHotel = (trip) => !!trip.dayBase && Object.keys(trip.dayBase).some((k) => trip.dayBase[k]);
 
   const range0 = (n) => Array.from({ length: n }, (_, i) => i);
+
+  /** 從備註讀標記：「第2晚」「第1-3晚」「D2住」→ 住宿；「午餐」「D3晚餐」→ 餐；「D2」「第2天」→ 指定天 */
+  function parseNoteTags(note) {
+    const t = String(note || '').normalize('NFKC');
+    const out = { nights: [], meal: '', day: 0 };
+    const num = (x) => parseInt(x, 10);
+    let m;
+    const reNight = /第?\s*(\d{1,2})\s*(?:[-~〜、,和與及]\s*(?:第)?\s*(\d{1,2}))?\s*(?:晚(?![餐飯上])|夜(?![ご景市])|泊)/g;
+    while ((m = reNight.exec(t))) {
+      const a = num(m[1]), b = m[2] ? num(m[2]) : a;
+      const sep = m[0].match(/[-~〜]/);
+      if (sep) { for (let k = Math.min(a, b); k <= Math.max(a, b) && k <= 60; k++) out.nights.push(k); } else { out.nights.push(a); if (b !== a) out.nights.push(b); }
+    }
+    m = t.match(/(?:\bD(?:ay)?\s*(\d{1,2})|第\s*(\d{1,2})\s*天)/i);
+    if (m) out.day = num(m[1] || m[2]);
+    if (/(?:\bD(?:ay)?\s*\d{1,2}|第\s*\d{1,2}\s*天)\s*(?:住|入住|飯店|hotel)/i.test(t) && out.day && !out.nights.length) out.nights.push(out.day);
+    if (/午餐|中餐|午飯|中飯|lunch|ランチ|昼/i.test(t)) out.meal = 'lunch';
+    else if (/晚餐|晚飯|dinner|ディナー|夕食|夜ご飯/i.test(t)) out.meal = 'dinner';
+    out.nights = [...new Set(out.nights)].filter((n) => n >= 1 && n <= 60).sort((a, b) => a - b);
+    return out;
+  }
+  /** 依備註標記：住宿設成第幾晚、餐廳標午／晚餐並鎖天。回傳剩下要加入清單的地點 */
+  function applyNoteTags(trip, list) {
+    const rest = []; let hotels = 0, meals = 0, days = 0;
+    for (const p of list) {
+      const tg = parseNoteTags(p.note);
+      const cat = CATS[p.cat] ? p.cat : guessCat(p.name, p.address);
+      const eat = ['food', 'cafe', 'bar'].includes(cat);
+      if (tg.nights.length && (tg.meal || (eat && !/住|飯店|酒店|旅館|hotel|宿/i.test(p.note || '')))) {
+        // 「第2晚吃這間」：當成那天的晚餐
+        if (!tg.day) tg.day = tg.nights[0];
+        if (!tg.meal) tg.meal = 'dinner';
+        tg.nights = [];
+      }
+      if (tg.nights.length) {
+        trip.dayBase = trip.dayBase || {};
+        const h = sanitizePlace({ ...p, day: 0, cat: 'hotel' });
+        if (!h) continue;
+        tg.nights.forEach((n) => { trip.dayBase[n] = { ...h, id: 'base-' + n }; });
+        trip.days = Math.max(trip.days | 0, tg.nights[tg.nights.length - 1] + 1);
+        hotels++;
+        continue;
+      }
+      const q = { ...p };
+      if (tg.meal) { q.meal = tg.meal; if (!CATS[q.cat] || q.cat === 'other' || q.cat === 'landmark') q.cat = 'food'; meals++; }
+      if (tg.day) { q.day = tg.day; q.locked = true; q.order = tg.meal === 'dinner' ? 900 : 0; days++; trip.days = Math.max(trip.days | 0, tg.day); }
+      rest.push(q);
+    }
+    return { places: rest, hotels, meals, days };
+  }
+  /** 一天的順序排好後，把午餐放到最接近 12:00 的位置、晚餐放最後 */
+  function placeMeals(seq, start, end, startHHMM) {
+    const lunch = seq.filter((p) => p.meal === 'lunch');
+    const dinner = seq.filter((p) => p.meal === 'dinner');
+    if (!lunch.length && !dinner.length) return seq;
+    let rest = seq.filter((p) => !p.meal);
+    const arrivalAt = (arr, idx) => {
+      let t = toMin(startHHMM), prev = start;
+      for (let i = 0; i < idx; i++) {
+        if (prev) { const d = haversine(prev, arr[i]); t += estimateLeg(d, suggestMode(d)).duration / 60; }
+        t += arr[i].stay || 0; prev = arr[i];
+      }
+      if (prev && arr[idx]) { const d = haversine(prev, arr[idx]); t += estimateLeg(d, suggestMode(d)).duration / 60; }
+      return t;
+    };
+    if (lunch.length) {
+      const L = lunch[0];
+      let best = 0, bd = Infinity;
+      for (let i = 0; i <= rest.length; i++) {
+        const arr = rest.slice(0, i).concat([L], rest.slice(i));
+        const dd = Math.abs(arrivalAt(arr, i) - 12 * 60);
+        if (dd < bd) { bd = dd; best = i; }
+      }
+      rest.splice(best, 0, L);
+      rest = rest.concat(lunch.slice(1));
+    }
+    return rest.concat(dinner);
+  }
+  /** 每天最多一個午餐、一個晚餐；多的移到最近、還沒有該餐的天（鎖定的不動） */
+  function spreadMeals(places, days) {
+    for (const kind of ['lunch', 'dinner']) {
+      for (let d = 1; d <= days; d++) {
+        const ms = places.filter((p) => p.day === d && p.meal === kind);
+        if (ms.length <= 1) continue;
+        const movable = ms.filter((p) => !p.locked);
+        for (const p of movable.slice(ms.length - movable.length === 0 ? 1 : 0)) {
+          let bestD = 0, bd = Infinity;
+          for (let k = 1; k <= days; k++) {
+            if (places.some((x) => x.day === k && x.meal === kind)) continue;
+            const ps = places.filter((x) => x.day === k);
+            const dd = ps.length ? haversine(p, centroid(ps)) : 1e9;
+            if (dd < bd) { bd = dd; bestD = k; }
+          }
+          if (bestD) p.day = bestD;
+        }
+      }
+    }
+  }
   function planDays(trip) {
     const days = Math.max(1, trip.days | 0);
     const places = trip.places.map((p) => ({ ...p }));
@@ -918,8 +1017,10 @@
     if (free.length && multiHotel(trip)) {
       // 多城市：先把「起終點相近」的天數合成一組，地點分到最近的一組，組內再平均分天
       const anchors = Array.from({ length: days }, (_, d) => {
+        // 以「當晚住哪」為準：換城市那天，下午就在新城市附近玩
         const e = dayEnds(trip, d + 1);
-        return e.start && e.end ? centroid([e.start, e.end]) : e.end || e.start;
+        const night = nightHotel(trip, d + 1);
+        return night || e.end || e.start;
       });
       const groups = [];
       anchors.forEach((a, d) => {
@@ -1009,11 +1110,12 @@
         best[0].day = best[1];
       }
     }
+    spreadMeals(places, days);
     // 每天排序
     for (let d = 1; d <= days; d++) {
       const pts = places.filter((p) => p.day === d);
       const e = dayEnds(trip, d);
-      const seq = orderStops(pts, e.start, e.end);
+      const seq = placeMeals(orderStops(pts, e.start, e.end), e.start, e.end, dayStartTime(trip, d));
       seq.forEach((p, i) => { p.order = i; });
     }
     return places;
@@ -1175,7 +1277,9 @@
       n: t.name, d: t.days, s: t.startDate || undefined, h: t.dayStart && t.dayStart !== '09:00' ? t.dayStart : undefined,
       b: t.base ? [t.base.name, +t.base.lat.toFixed(6), +t.base.lng.toFixed(6)] : undefined,
       db: t.dayBase && Object.keys(t.dayBase).length ? Object.fromEntries(Object.entries(t.dayBase).map(([d, v]) => [d, [v.name, +v.lat.toFixed(6), +v.lng.toFixed(6)]])) : undefined,
-      p: t.places.map((p) => [p.name, +p.lat.toFixed(6), +p.lng.toFixed(6), p.day, p.order, p.note || 0, p.locked ? 1 : 0, p.stay === 60 ? 0 : p.stay, p.url && p.url.length < 300 ? p.url : 0, p.cat || 0, p.hours || 0, p.cost || 0, p.done ? 1 : 0, p.hoursWeek || 0, p.photo && p.photo.src === 'wiki' ? [p.photo.url, p.photo.link] : 0]),
+      p: t.places.map((p) => [p.name, +p.lat.toFixed(6), +p.lng.toFixed(6), p.day, p.order, p.note || 0, p.locked ? 1 : 0, p.stay === 60 ? 0 : p.stay, p.url && p.url.length < 300 ? p.url : 0, p.cat || 0, p.hours || 0, p.cost || 0, p.done ? 1 : 0, p.hoursWeek || 0, p.photo && p.photo.src === 'wiki' ? [p.photo.url, p.photo.link] : 0, p.meal || 0]),
+      ar: t.arrive ? [t.arrive.name, +t.arrive.lat.toFixed(6), +t.arrive.lng.toFixed(6), t.arriveTime || 0] : undefined,
+      dp: t.depart ? [t.depart.name, +t.depart.lat.toFixed(6), +t.depart.lng.toFixed(6), t.departTime || 0] : undefined,
       th: t.theme && t.theme !== 'auto' ? t.theme : undefined, cu: t.currency || undefined,
       cl: t.checklist && t.checklist.length ? t.checklist.map((c) => [c.t, c.done ? 1 : 0, c.g || 0]) : undefined,
       bk: t.bookings && t.bookings.length ? t.bookings.map((b) => { const o = {}; for (const [k, v] of Object.entries(b)) if (v && k !== 'id') o[k] = v; return o; }) : undefined,
@@ -1203,12 +1307,14 @@
     t.members = o.mb || ['我'];
     t.expenses = (o.ex || []).map((e) => ({ title: e[0], amount: e[1], payer: e[2], split: e[3] || t.members.slice(), date: e[4] || '' }));
     if (o.b) t.base = { name: o.b[0], lat: o.b[1], lng: o.b[2] };
+    if (o.ar) { t.arrive = { name: o.ar[0], lat: o.ar[1], lng: o.ar[2] }; t.arriveTime = o.ar[3] || ''; }
+    if (o.dp) { t.depart = { name: o.dp[0], lat: o.dp[1], lng: o.dp[2] }; t.departTime = o.dp[3] || ''; }
     if (o.db) t.dayBase = Object.fromEntries(Object.entries(o.db).map(([d, v]) => [d, { name: v[0], lat: v[1], lng: v[2] }]));
     const idMap = [];
     t.places = (o.p || []).map((a, i) => {
       const id = 'p' + i.toString(36);
       idMap.push(id);
-      return { id, name: a[0], lat: a[1], lng: a[2], day: a[3], order: a[4], note: a[5] || '', locked: !!a[6], stay: a[7] || 60, url: a[8] || '', cat: a[9] || '', hours: a[10] || '', cost: a[11] || 0, done: !!a[12], hoursWeek: a[13] || null, photo: a[14] ? { src: 'wiki', url: a[14][0], link: a[14][1] } : null, photoTry: a[14] ? 1 : 0 };
+      return { id, name: a[0], lat: a[1], lng: a[2], day: a[3], order: a[4], note: a[5] || '', locked: !!a[6], stay: a[7] || 60, url: a[8] || '', cat: a[9] || '', hours: a[10] || '', cost: a[11] || 0, done: !!a[12], hoursWeek: a[13] || null, photo: a[14] ? { src: 'wiki', url: a[14][0], link: a[14][1] } : null, photoTry: a[14] ? 1 : 0, meal: a[15] || '' };
     });
     t.legModes = {};
     for (const [k, v] of Object.entries(o.m || {})) {
@@ -1228,6 +1334,6 @@
     cleanKey, parseGeoJSON, parseTakeoutCSV, parseKML, newTrip, sanitizeTrip, sanitizePlace, mergePlaces,
     MODES, estimateLeg, suggestMode, gmapsDirUrl, gmapsPlaceUrl, gmapsDayUrl, appleDirUrl, applePlaceUrl, timeline, hm, toMin, centroid, balancedClusters,
     orderStops, planDays, pathLen, dayStops, legKey, parseOsrm, decodePolyline, parseGoogleRoute,
-    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, CAT_COLOR, BOOK_TYPES, sanitizeBooking, bookingsOn, sanitizeExpense, settle, parseItineraryText, cleanPlaceName, wikiPick, wikiLangs, PHOTO_GEO_CATS, sanitizePhoto, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel, dayStartTime, departDeadline, CLEAR_MIN, CHECKIN_MIN,
+    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, CAT_COLOR, BOOK_TYPES, sanitizeBooking, bookingsOn, sanitizeExpense, settle, parseItineraryText, cleanPlaceName, wikiPick, wikiLangs, PHOTO_GEO_CATS, sanitizePhoto, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel, parseNoteTags, applyNoteTags, placeMeals, dayStartTime, departDeadline, CLEAR_MIN, CHECKIN_MIN,
   };
 });

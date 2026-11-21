@@ -245,6 +245,14 @@ with sync_playwright() as p:
     page.evaluate("(()=>{const t=TripApp.trip();t.arrive=null;t.depart=null;t.arriveTime='';t.departTime='';})()")
     page.click('[data-act=filter][data-d="0"]')
 
+    # 7c) 自動排行程後可「復原排程」
+    before = page.evaluate('JSON.stringify(TripApp.trip().places.map(p=>[p.id,p.day,p.order]))')
+    page.click('[data-act=autoplan]'); page.click('[data-mact=ok]'); page.wait_for_timeout(500)
+    check('自動排程後出現「復原排程」按鈕', page.locator('[data-act=restorePlan]').count() == 1)
+    page.click('[data-act=restorePlan]'); page.wait_for_timeout(400)
+    after = page.evaluate('JSON.stringify(TripApp.trip().places.map(p=>[p.id,p.day,p.order]))')
+    check('復原排程回到原本分天與順序', before == after)
+
     # 8) 量距離（無 Google 金鑰）
     page.click('#tabs button[data-tab=measure]')
     ids = page.evaluate("(()=>{const t=TripApp.trip();return [t.places.find(p=>p.name=='淺草寺').id,t.places.find(p=>p.name=='上野公園').id]})()")
@@ -551,6 +559,25 @@ with sync_playwright() as p:
     tr = vp.evaluate("TripApp.C.settle(TripApp.trip().members, TripApp.trip().expenses).transfers.map(x=>x.from+'>'+x.to+':'+x.amount)")
     check('結算正確（Amy 給我 500、Bob 給我 1500）', sorted(tr) == ['Amy>我:500', 'Bob>我:1500'], str(tr))
     vp.screenshot(path=f'{OUT}/36_split.png')
+    # 備註標記匯入：第幾晚住宿、午／晚餐
+    vp.click('#btnSettings'); vp.click('[data-mact=newTrip]'); vp.fill('#askIn', '北海道備註'); vp.click('[data-mact=ok]'); vp.wait_for_timeout(300)
+    vp.set_input_files('#fileInput', os.path.join(FIX, '北海道_備註標記.json')); vp.wait_for_timeout(800)
+    info = vp.evaluate("(()=>{const t=TripApp.trip();return {d:t.days,h1:t.dayBase[1]&&t.dayBase[1].name,h3:t.dayBase[3]&&t.dayBase[3].name,n:t.places.length,meal:t.places.filter(p=>p.meal).map(p=>p.name+':'+p.meal+':'+p.day)}})()")
+    check('備註「第1-2晚」「第3晚」設成住宿，天數自動變 4', info['h1'] == 'JR Tower 日航' and info['h3'] == '洞爺湖飯店' and info['d'] == 4 and info['n'] == 8, str(info))
+    check('備註「D1 晚餐」「午餐」標成用餐', '羊八:dinner:1' in info['meal'] and any(x.startswith('湯咖哩 GARAKU:lunch') for x in info['meal']), str(info['meal']))
+    vp.click('#tabs button[data-tab=plan]'); vp.click('[data-act=autoplan]'); vp.wait_for_timeout(300)
+    if vp.locator('#modal:not([hidden]) [data-mact=ok]').count(): vp.click('[data-mact=ok]')
+    vp.wait_for_timeout(800)
+    d1 = vp.evaluate('TripApp.C.dayStops(TripApp.trip(),1).map(p=>p.name)')
+    check('Day 1 晚餐（羊八）排在最後', d1 and d1[-1] == '羊八', str(d1))
+    check('洞爺湖的點排在住洞爺湖前後（Day 3/4）', vp.evaluate("TripApp.trip().places.find(p=>p.name=='昭和新山').day") in (3, 4))
+    vp.screenshot(path=f'{OUT}/37_note_tags.png')
+    # 天數多時晶片換行，不用左右滑
+    for _ in range(8): vp.click('[data-act=days][data-d="1"]')
+    vp.wait_for_timeout(300)
+    box = vp.evaluate("(()=>{const c=document.querySelector('.route-bar .chips');return [c.scrollWidth,c.clientWidth,c.getBoundingClientRect().height]})()")
+    check('12 天的天數晶片換行顯示（不用橫向捲動）', box[0] <= box[1] + 2 and box[2] > 50, str(box))
+    vp.locator('.route-bar').scroll_into_view_if_needed(); vp.screenshot(path=f'{OUT}/38_day_chips.png')
     check('v1.3 頁面沒有錯誤', not verr, '; '.join(verr[:3]))
     vctx.close()
 

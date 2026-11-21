@@ -455,3 +455,40 @@ test('機場：第 1 天從抵達機場出發、最後一天到出發機場；�
   const back = C.sanitizeTrip(JSON.parse(JSON.stringify(t)));
   assert.strictEqual(back.arrive.cat, 'airport'); assert.strictEqual(back.departTime, '17:00');
 });
+
+test('備註標記：第幾晚住宿、午／晚餐、指定天', () => {
+  const tg = C.parseNoteTags;
+  assert.deepStrictEqual(tg('第1-3晚').nights, [1, 2, 3]);
+  assert.deepStrictEqual(tg('D2晚餐'), { nights: [], meal: 'dinner', day: 2 });
+  assert.strictEqual(tg('中餐').meal, 'lunch');
+  assert.deepStrictEqual(tg('夜景很美').nights, []);
+  const t = C.newTrip('北海道'); t.days = 3;
+  const r = C.applyNoteTags(t, [
+    { name: 'JR Tower 日航', lat: 43.0682, lng: 141.3531, note: '第1-2晚', cat: 'hotel' },
+    { name: '洞爺湖飯店', lat: 42.5787, lng: 140.7959, note: '第3晚' },
+    { name: '羊八', lat: 43.0532, lng: 141.3503, note: 'D1 晚餐' },
+    { name: '湯咖哩', lat: 43.05, lng: 141.35, note: '午餐' },
+    { name: '蟹王', lat: 42.4779, lng: 141.2422, note: '第2晚吃' , cat: 'food' },
+    { name: '白鬚瀑布', lat: 43.47, lng: 142.63, note: '' },
+  ]);
+  assert.strictEqual(r.hotels, 2);
+  assert.strictEqual(t.dayBase[1].name, 'JR Tower 日航'); assert.strictEqual(t.dayBase[2].name, 'JR Tower 日航'); assert.strictEqual(t.dayBase[3].name, '洞爺湖飯店');
+  assert.strictEqual(t.days, 4, '住 3 晚 → 至少 4 天');
+  const yang = r.places.find((p) => p.name === '羊八');
+  assert.ok(yang.meal === 'dinner' && yang.day === 1 && yang.locked);
+  const crab = r.places.find((p) => p.name === '蟹王');
+  assert.ok(crab.meal === 'dinner' && crab.day === 2);
+  assert.strictEqual(r.places.find((p) => p.name === '湯咖哩').meal, 'lunch');
+});
+
+test('排程：晚餐排最後、午餐排在接近中午', () => {
+  const t = C.newTrip('x'); t.days = 1; t.dayStart = '09:00';
+  t.base = C.sanitizePlace({ name: 'H', lat: 43.0653, lng: 141.351 });
+  const mk = (name, lat, lng, extra) => C.sanitizePlace({ name, lat, lng, stay: 90, ...extra });
+  t.places = [mk('晚餐店', 43.054, 141.352, { meal: 'dinner' }), mk('A', 43.06, 141.33), mk('B', 43.07, 141.34), mk('午餐店', 43.065, 141.355, { meal: 'lunch' }), mk('C', 43.08, 141.36), mk('D', 43.05, 141.32)];
+  const p = C.planDays(t);
+  const seq = p.filter((x) => x.day === 1).sort((a, b) => a.order - b.order).map((x) => x.name);
+  assert.strictEqual(seq[seq.length - 1], '晚餐店', seq.join('>'));
+  const li = seq.indexOf('午餐店');
+  assert.ok(li >= 1 && li <= 3, '午餐位置 ' + seq.join('>'));
+});
