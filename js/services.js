@@ -129,7 +129,7 @@
       },
       body: JSON.stringify(body),
     }, 15000);
-    if (!j || !j.routes || !j.routes.length) throw new Error('Google 查無大眾運輸路線（可能太近或該地區無資料）');
+    if (!j || !j.routes || !j.routes.length) { const e = new Error('Google 查無大眾運輸路線（太近，或該地區 Google 未開放大眾運輸資料，例如日本），已改用估算'); e.noRoute = true; throw e; }
     const r = C.parseGoogleRoute(j);
     r.source = 'google';
     return r;
@@ -231,10 +231,23 @@
     return '';
   }
 
+  /** 分別測 Routes 與 Places；回傳 { routes:{ok,duration|error}, places:{ok,name|error} } */
   async function testGoogleKey(key) {
-    const a = { lat: 35.681236, lng: 139.767125 }, b = { lat: 35.714765, lng: 139.796655 };
-    const r = await googleTransit(a, b, key);
-    return r;
+    // 用台北測（Google 不提供日本的大眾運輸 API 資料，東京會回空結果）
+    const a = { lat: 25.047675, lng: 121.517055 }, b = { lat: 25.033976, lng: 121.564472 };
+    const out = {};
+    try { const r = await googleTransit(a, b, key); out.routes = { ok: true, duration: r.duration }; }
+    catch (e) { out.routes = { ok: !!e.noRoute, empty: !!e.noRoute, error: e.message, status: e.status }; }
+    try {
+      const j = await fetchJSON('https://places.googleapis.com/v1/places:searchText', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'places.displayName' },
+        body: JSON.stringify({ textQuery: '台北101', languageCode: 'zh-TW', pageSize: 1 }),
+      });
+      const p = j && j.places && j.places[0];
+      out.places = { ok: true, name: p && p.displayName ? p.displayName.text : '' };
+    } catch (e) { out.places = { ok: false, error: e.message, status: e.status }; }
+    return out;
   }
 
   window.TripServices = { LS, peekLeg, getLeg, geocode, testGoogleKey, clearRouteCache, fetchJSON, nearby, findPhoto, photoSrc };

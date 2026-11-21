@@ -1,5 +1,5 @@
 /* Service worker：程式離線可開、看過的地圖圖磚離線可看 */
-const VERSION = 'v1.11.1';
+const VERSION = 'v1.11.2';
 const SHELL = 'shell-' + VERSION;
 const TILES = 'tiles-v1';
 const MAX_TILES = 3000;

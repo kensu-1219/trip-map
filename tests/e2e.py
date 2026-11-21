@@ -243,7 +243,7 @@ with sync_playwright() as p:
     page.click('#btnSettings')
     page.fill('#sKey', 'AIzaFAKE-test-key')
     page.click('[data-mact=testKey]'); page.wait_for_timeout(500)
-    check('金鑰測試成功訊息', '金鑰可用' in page.inner_text('#keyMsg'))
+    km = page.inner_text('#keyMsg'); check('金鑰測試：Routes 與 Places 皆可用', 'Routes API 可用' in km and 'Places API 可用' in km)
     page.click('[data-mact=ok]'); page.wait_for_timeout(1500)
     mt = page.inner_text('#tabBody')
     check('有金鑰時大眾運輸顯示路線（銀座線 淺草→上野）', '銀座線' in mt and 'Google' in mt, '')

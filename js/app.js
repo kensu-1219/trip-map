@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.11.1';
+  const VERSION = '1.11.2';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1438,8 +1438,16 @@
         const k = $('#sKey').value.trim(); const m = $('#keyMsg');
         if (!k) { m.textContent = '請先貼上金鑰'; return; }
         m.textContent = '測試中…';
-        try { const r = await SV.testGoogleKey(k); m.innerHTML = I('check') + ' 金鑰可用：東京車站→淺草 大眾運輸 ' + C.fmtDur(r.duration); }
-        catch (e) { m.innerHTML = I('warn') + ' ' + esc(e.message) + '<br>請確認已啟用 Routes API，且網站限制包含 ' + esc(location.origin); }
+        const r = await SV.testGoogleKey(k);
+        const line = (ok, txt) => (ok ? I('check') : I('warn')) + ' ' + txt;
+        const rt = r.routes.ok
+          ? (r.routes.empty ? 'Routes API 可用（測試路段無班次資料）' : 'Routes API 可用：台北車站→台北101 大眾運輸 ' + C.fmtDur(r.routes.duration))
+          : 'Routes API 失敗：' + esc(r.routes.error);
+        const pl = r.places.ok ? 'Places API 可用' + (r.places.name ? '：找到「' + esc(r.places.name) + '」' : '') : 'Places API 失敗：' + esc(r.places.error);
+        let html = line(r.routes.ok, rt) + '<br>' + line(r.places.ok, pl);
+        if (!r.routes.ok || !r.places.ok) html += '<br>請確認兩個 API 都已啟用，且網站限制包含 ' + esc(location.origin) + '/*（設定後最多 5 分鐘生效）';
+        html += '<br><small>註：Google 不提供日本的大眾運輸 API 資料，日本行程的大眾運輸會用估算。</small>';
+        m.innerHTML = html;
       },
       ok: async () => {
         t.name = $('#sName').value.trim().slice(0, 100) || t.name;
