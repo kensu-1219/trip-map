@@ -667,3 +667,6 @@ html[data-theme="nier"] .leaflet-control-attribution, html[data-theme="nier"] .l
   html[data-theme="nier"] #tabs button.on::before, html[data-theme="nier"] .modal-card h3::before, html[data-theme="nier"] #toast::before { animation: none; }
   html[data-theme="nier"] .btn, html[data-theme="nier"] .chip, html[data-theme="nier"] #tabs button { transition: none; }
 }
+html[data-theme="nier"] .btn.accent { background-image: linear-gradient(var(--accent), var(--accent)); background-color: transparent; color: var(--accent); border-color: var(--accent); }
+html[data-theme="nier"] .btn.accent:hover { color: var(--on-pri); }
+html[data-theme="nier"] .btn.danger { background-image: linear-gradient(var(--danger), var(--danger)); }
