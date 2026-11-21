@@ -161,6 +161,7 @@
         address: loc.address || loc.Address || '',
         note: pr.Comment || pr.comment || pr.description || '',
         url,
+        ...(CATS[pr.cat] ? { cat: pr.cat } : {}),
       }));
     }
     return out;
