@@ -124,7 +124,7 @@
     const j = await fetchJSON('https://routes.googleapis.com/directions/v2:computeRoutes', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json', 'X-Goog-Api-Key': key,
+        'Content-Type': 'application/json', 'X-Goog-Api-Key': C.cleanKey(key),
         'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps.travelMode,routes.legs.steps.staticDuration,routes.legs.steps.transitDetails,routes.travelAdvisory.transitFare',
       },
       body: JSON.stringify(body),
@@ -149,7 +149,7 @@
         if (opts.near) body.locationBias = { circle: { center: { latitude: opts.near.lat, longitude: opts.near.lng }, radius: 50000 } };
         const j = await googleQueue(() => fetchJSON('https://places.googleapis.com/v1/places:searchText', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': s.gkey, 'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.googleMapsUri,places.primaryType,places.regularOpeningHours.weekdayDescriptions' },
+          headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': C.cleanKey(s.gkey), 'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location,places.googleMapsUri,places.primaryType,places.regularOpeningHours.weekdayDescriptions' },
           body: JSON.stringify(body),
         }));
         const list = (j && j.places || []).map((p) => ({
@@ -208,7 +208,7 @@
   async function googlePhoto(place, key) {
     const j = await photoQueue(() => fetchJSON('https://places.googleapis.com/v1/places:searchText', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'places.location,places.photos' },
+      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': C.cleanKey(key), 'X-Goog-FieldMask': 'places.location,places.photos' },
       body: JSON.stringify({ textQuery: place.name, pageSize: 3, locationBias: { circle: { center: { latitude: place.lat, longitude: place.lng }, radius: 300 } } }),
     }, 10000));
     for (const p of (j && j.places) || []) {
@@ -227,7 +227,7 @@
   function photoSrc(ph, settings) {
     if (!ph) return '';
     if (ph.src === 'wiki') return ph.url;
-    if (ph.src === 'google' && settings && settings.gkey) return 'https://places.googleapis.com/v1/' + ph.name + '/media?maxWidthPx=640&key=' + encodeURIComponent(settings.gkey);
+    if (ph.src === 'google' && settings && settings.gkey) return 'https://places.googleapis.com/v1/' + ph.name + '/media?maxWidthPx=640&key=' + encodeURIComponent(C.cleanKey(settings.gkey));
     return '';
   }
 
@@ -241,7 +241,7 @@
     try {
       const j = await fetchJSON('https://places.googleapis.com/v1/places:searchText', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'places.displayName' },
+        headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': C.cleanKey(key), 'X-Goog-FieldMask': 'places.displayName' },
         body: JSON.stringify({ textQuery: '台北101', languageCode: 'zh-TW', pageSize: 1 }),
       });
       const p = j && j.places && j.places[0];

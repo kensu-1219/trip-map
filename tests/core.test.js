@@ -425,3 +425,8 @@ test('預訂：清理、依日期列出（住宿入住與退房）、分享往�
   assert.equal(b.bookings[0].code, 'ABC123'); assert.deepEqual(b.members, ['Ken', 'Amy']);
   assert.equal(b.expenses[0].payer, 'Amy'); assert.deepEqual(b.expenses[0].split, ['Ken', 'Amy']);
 });
+
+test('cleanKey 去掉手機貼上的雜字元', () => {
+  assert.strictEqual(C.cleanKey(' ＡＩza​SyX-_9 \n'), 'AIzaSyX-_9');
+  assert.strictEqual(C.cleanKey(null), '');
+});

@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.11.2';
+  const VERSION = '1.11.3';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1435,7 +1435,7 @@
       '<div class="muted small">版本 ' + VERSION + ' · 資料存在這台裝置的瀏覽器' + (t.synced ? '＋Firebase' : '') + '</div>' +
       '<div class="row gap end"><button class="btn" data-mact="close">取消</button><button class="btn primary" data-mact="ok">儲存</button></div>', {
       testKey: async () => {
-        const k = $('#sKey').value.trim(); const m = $('#keyMsg');
+        const k = C.cleanKey($('#sKey').value); $('#sKey').value = k; const m = $('#keyMsg');
         if (!k) { m.textContent = '請先貼上金鑰'; return; }
         m.textContent = '測試中…';
         const r = await SV.testGoogleKey(k);
@@ -1453,7 +1453,7 @@
         t.name = $('#sName').value.trim().slice(0, 100) || t.name;
         const thSel = $('#modalBody .themeopt.on'); if (thSel) t.theme = thSel.dataset.theme;
         t.currency = ($('#sCur').value || '').trim().slice(0, 5);
-        const newKey = $('#sKey').value.trim();
+        const newKey = C.cleanKey($('#sKey').value);
         if (newKey !== s.gkey) { s.gkey = newKey; s.gkeyAt = Date.now(); S.requested.clear(); S.legs = {}; }
         s.photos = $('#sPhotos').checked;
         s.navApp = $('#sNav').value;

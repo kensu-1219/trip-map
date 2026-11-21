@@ -1163,9 +1163,14 @@
     return sanitizeTrip(t);
   }
 
+  /** 金鑰只留 API key 合法字元（手機貼上常混入全形字、空白、零寬字元） */
+  function cleanKey(k) {
+    return String(k || '').normalize('NFKC').replace(/[^A-Za-z0-9_\-]/g, '');
+  }
+
   return {
     haversine, validLatLng, uid, fmtDist, fmtDur, parseGoogleMapsUrl, parseCSV, parseImport,
-    parseGeoJSON, parseTakeoutCSV, parseKML, newTrip, sanitizeTrip, sanitizePlace, mergePlaces,
+    cleanKey, parseGeoJSON, parseTakeoutCSV, parseKML, newTrip, sanitizeTrip, sanitizePlace, mergePlaces,
     MODES, estimateLeg, suggestMode, gmapsDirUrl, gmapsPlaceUrl, gmapsDayUrl, appleDirUrl, applePlaceUrl, timeline, hm, toMin, centroid, balancedClusters,
     orderStops, planDays, pathLen, dayStops, legKey, parseOsrm, decodePolyline, parseGoogleRoute,
     b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, CAT_COLOR, BOOK_TYPES, sanitizeBooking, bookingsOn, sanitizeExpense, settle, parseItineraryText, cleanPlaceName, wikiPick, wikiLangs, PHOTO_GEO_CATS, sanitizePhoto, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel,

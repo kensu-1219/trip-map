@@ -241,7 +241,7 @@ with sync_playwright() as p:
 
     # 9) 填 Google 金鑰 → 大眾運輸實際轉乘
     page.click('#btnSettings')
-    page.fill('#sKey', 'AIzaFAKE-test-key')
+    page.fill('#sKey', ' AIzaFAKE-test-key\u200b')
     page.click('[data-mact=testKey]'); page.wait_for_timeout(500)
     km = page.inner_text('#keyMsg'); check('金鑰測試：Routes 與 Places 皆可用', 'Routes API 可用' in km and 'Places API 可用' in km)
     page.click('[data-mact=ok]'); page.wait_for_timeout(1500)
