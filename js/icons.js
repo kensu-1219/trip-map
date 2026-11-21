@@ -83,7 +83,7 @@
     filter: '<path d="M3.5 4.5h17l-6.5 8v6l-4 2v-8z"/>',
   };
   const sprite = '<svg xmlns="http://www.w3.org/2000/svg" style="display:none">' +
-    Object.entries(P).map(([k, v]) => '<symbol id="i-' + k + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="square" stroke-linejoin="miter">' + v + '</symbol>').join('') + '</svg>';
+    Object.entries(P).map(([k, v]) => '<symbol id="i-' + k + '" viewBox="0 0 24 24" fill="none" stroke="currentColor">' + v + '</symbol>').join('') + '</svg>';
   function inject() {
     if (document.getElementById('icon-sprite')) return;
     const d = document.createElement('div'); d.id = 'icon-sprite'; d.innerHTML = sprite;

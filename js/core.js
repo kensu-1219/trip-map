@@ -612,7 +612,7 @@
 
   /* ---------- 行程資料 ---------- */
   const PALETTE = ['#b0533b', '#3f6e78', '#6b7a35', '#7d4f7a', '#b4862f', '#9a4558', '#3c5a86', '#5f7f68', '#8a6a4b', '#6e6a5c'];
-  const THEMES = ['auto', 'clean', 'night', 'parchment', 'relic', 'neon', 'washi', 'tide'];
+  const THEMES = ['auto', 'clean', 'night', 'parchment', 'relic', 'neon', 'washi', 'tide', 'illust', 'nier'];
   const dayColor = (d) => (d > 0 ? PALETTE[(d - 1) % PALETTE.length] : '#8a8370');
 
   function newTrip(name) {

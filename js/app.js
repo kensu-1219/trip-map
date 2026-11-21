@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.13.1';
+  const VERSION = '1.14.0';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -72,12 +72,73 @@
     map.on('zoomend', lbl); lbl();
     map.on('zoomend', drawRoutes);
   }
-  function setTiles() {
-    let k = settings().tiles;
-    if (k === 'auto' || !TILES[k]) k = isDarkTheme() ? 'dark' : 'osm';
+  /* ---------- 向量底圖（日系插畫、NieR 主題才載入） ---------- */
+  let vecLayer = null, vecTheme = '', mlReady = null, rasterKey = '';
+  const loadJS = (src) => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('載入失敗 ' + src)); document.head.appendChild(s); });
+  function loadMapLibre() {
+    if (mlReady) return mlReady;
+    mlReady = (async () => {
+      const t0 = performance.now();
+      if (!document.getElementById('mlcss')) { const l = document.createElement('link'); l.id = 'mlcss'; l.rel = 'stylesheet'; l.href = 'vendor/maplibre/maplibre-gl.css'; document.head.appendChild(l); }
+      if (!window.maplibregl) await loadJS('vendor/maplibre/maplibre-gl-csp.js');
+      window.maplibregl.setWorkerUrl(new URL('vendor/maplibre/maplibre-gl-csp-worker.js', location.href).href);
+      if (!L.maplibreGL) await loadJS('vendor/maplibre/leaflet-maplibre-gl.js');
+      window.__mlLoadMs = Math.round(performance.now() - t0);
+    })();
+    mlReady.catch(() => { mlReady = null; });
+    return mlReady;
+  }
+  function removeVector() { document.documentElement.classList.remove('vec-ready'); if (vecLayer) { map.removeLayer(vecLayer); vecLayer = null; vecTheme = ''; } }
+  function setRaster(k) {
+    if (tileLayer && rasterKey === k) return;
     const t = TILES[k];
     if (tileLayer) map.removeLayer(tileLayer);
+    rasterKey = k;
     tileLayer = L.tileLayer(t.url, { attribution: t.attr, maxZoom: t.max, subdomains: 'abcd', crossOrigin: true }).addTo(map);
+  }
+  async function setVector(th) {
+    if (vecLayer && vecTheme === th) return;
+    const V = window.TripMapStyle;
+    if (!tileLayer && !vecLayer) setRaster('osm'); // 載入向量前先有底圖可看
+    const t0 = performance.now();
+    try {
+      await loadMapLibre();
+      if (activeTheme() !== th || !map) return;
+      removeVector();
+      const layer = L.maplibreGL({ style: V.build(th), attribution: V.ATTR, interactive: false, pane: 'tilePane', attributionControl: false });
+      layer.addTo(map); vecLayer = layer; vecTheme = th;
+      const ml = layer.getMaplibreMap();
+      const pats = V.patterns(th);
+      ml.on('styleimagemissing', (e) => { if (pats[e.id] && !ml.hasImage(e.id)) ml.addImage(e.id, pats[e.id], { pixelRatio: 2 }); });
+      let ok = false, failed = false;
+      const fail = (why) => {
+        if (ok || failed || vecLayer !== layer) return;
+        failed = true; clearTimeout(giveUp);
+        removeVector(); setRaster(isDarkTheme() ? 'dark' : 'osm');
+        window.__vecFail = why; toast('風格底圖暫時載不到，先用一般地圖');
+      };
+      const giveUp = setTimeout(() => fail('timeout'), 15000);
+      ml.on('error', (e) => { (window.__vecErrs = window.__vecErrs || []).push(String(e.error && (e.error.message || e.error.status) || e.sourceId || '?').slice(0, 120)); if (!ok && (e.sourceId === 'omt' || /tiles\.openfreemap|Failed to fetch|AJAXError/i.test(String(e.error && (e.error.message || e.error.url) || '')))) fail('error'); });
+      ml.once('idle', () => {
+        let loaded = false; try { loaded = ml.isSourceLoaded('omt'); } catch (e) { loaded = false; }
+        if (!loaded || failed) { fail('noload'); return; }
+        ok = true; clearTimeout(giveUp);
+        window.__vecFirstMs = Math.round(performance.now() - t0);
+        if (vecLayer === layer && tileLayer) { map.removeLayer(tileLayer); tileLayer = null; rasterKey = ''; }
+        document.documentElement.classList.add('vec-ready');
+      });
+    } catch (e) {
+      removeVector(); setRaster(isDarkTheme() ? 'dark' : 'osm');
+    }
+  }
+  function setTiles() {
+    let k = settings().tiles;
+    const th = activeTheme();
+    const V = window.TripMapStyle;
+    if ((k === 'auto' || !TILES[k]) && V && V.VECTOR.includes(th) && navigator.onLine !== false) { setVector(th); return; }
+    removeVector();
+    if (k === 'auto' || !TILES[k]) k = isDarkTheme() ? 'dark' : 'osm';
+    setRaster(k);
   }
 
   function pinIcon(color, label, cls, html) {
@@ -200,6 +261,12 @@
     }, { passive: true });
   }
 
+  // 各主題的路線筆觸：日系＝粗圓、白邊；NieR＝細直角、虛點方塊
+  const ROUTE_STYLE = {
+    def: { k: 1, halo: 4, cap: 'round', join: 'round' },
+    illust: { k: 1.25, halo: 6, cap: 'round', join: 'round' },
+    nier: { k: 0.6, halo: 4, cap: 'butt', join: 'miter', realDash: null, estDash: (w) => '4 ' + (w + 5) },
+  };
   /** 只重畫路線（縮放、路線結果回來時用；不會關掉打開中的地點視窗） */
   function drawRoutes() {
     const t = trip(), f = S.ui.dayFilter;
@@ -213,13 +280,15 @@
           const leg = legInfo(t, a, b);
           const real = !leg.res.estimated && leg.res.coords && leg.res.coords.length > 2;
           const coords = real ? leg.res.coords : arcCoords(a, b);
-          const w = f ? 4.5 : 3.5;
+          const rs = ROUTE_STYLE[activeTheme()] || ROUTE_STYLE.def;
+          const w = (f ? 4.5 : 3.5) * rs.k;
           if (real) {
-            L.polyline(coords, { color: halo, weight: w + 4, opacity: 0.9, lineCap: 'round', lineJoin: 'round', interactive: false, smoothFactor: 1.5 }).addTo(routeLayer);
-            L.polyline(coords, { color: col, weight: w, opacity: 0.95, lineCap: 'round', lineJoin: 'round', interactive: false, smoothFactor: 1.5 }).addTo(routeLayer);
+            L.polyline(coords, { color: halo, weight: w + rs.halo, opacity: 0.9, lineCap: rs.cap, lineJoin: rs.join, interactive: false, smoothFactor: 1.5, className: 'rt-halo' }).addTo(routeLayer);
+            L.polyline(coords, { color: col, weight: w, opacity: 0.95, lineCap: rs.cap, lineJoin: rs.join, interactive: false, smoothFactor: 1.5, dashArray: rs.realDash, className: 'rt-line' }).addTo(routeLayer);
           } else {
-            L.polyline(coords, { color: halo, weight: w + 3.5, opacity: 0.9, lineCap: 'round', dashArray: '0.1 ' + (w + 7), interactive: false }).addTo(routeLayer);
-            L.polyline(coords, { color: col, weight: w + 1, opacity: 1, lineCap: 'round', dashArray: '0.1 ' + (w + 7), interactive: false }).addTo(routeLayer);
+            const da = rs.estDash ? rs.estDash(w) : '0.1 ' + (w + 7);
+            L.polyline(coords, { color: halo, weight: w + rs.halo - 0.5, opacity: 0.9, lineCap: rs.cap, dashArray: da, interactive: false }).addTo(routeLayer);
+            L.polyline(coords, { color: col, weight: w + 1, opacity: 1, lineCap: rs.cap, dashArray: da, interactive: false, className: 'rt-est' }).addTo(routeLayer);
           }
           addArrow(coords, col);
         }
@@ -626,6 +695,8 @@
     neon: { name: '霓虹街頭', desc: '黑底螢光黃、粗框貼紙感', sw: ['#101012', '#f2e600', '#ff3d7f', '#2de2e6'], dark: true },
     washi: { name: '和紙朱印', desc: '米白和紙、墨黑、朱紅印章', sw: ['#f5f0e6', '#2a2a2a', '#c8102e', '#264a7a'], dark: false },
     tide: { name: '海島晴空', desc: '白沙、海藍、珊瑚橘、圓角', sw: ['#f4f7f6', '#0a7ea4', '#ff7a59', '#ffd166'], dark: false },
+    illust: { name: '觀光繪地圖', desc: '日系插畫：和紙、波浪海、緞帶與朱印（風格底圖）', sw: ['#f6efdc', '#a8d5e2', '#d9542c', '#6b9a5b'], dark: false, vec: true },
+    nier: { name: '機械紀錄', desc: 'NieR 風：米褐、髮絲線、菱形、反白（風格底圖）', sw: ['#d6d0b8', '#4a463b', '#b8b29b', '#c45a3c'], dark: false, vec: true },
   };
   const THEME_PAL = {
     clean: ['#e8553a', '#2f7ae5', '#1f9d6b', '#9b51e0', '#f2a516', '#e0457b', '#00a3bf', '#5b6bd6', '#7cb518', '#8a8f98'],
@@ -635,6 +706,8 @@
     neon: ['#f2e600', '#ff3d7f', '#2de2e6', '#9b5cff', '#ff8a00', '#3dff8f', '#ff5c5c', '#5c9dff', '#ffffff', '#c0c0c0'],
     washi: ['#c8102e', '#264a7a', '#3f7a4a', '#7a3f6e', '#c47b12', '#1f6f78', '#8c5a2b', '#5a5a9c', '#a33a5c', '#555555'],
     tide: ['#ff7a59', '#0a7ea4', '#2a9d8f', '#e9a400', '#7b5ea7', '#e05780', '#3a86ff', '#43aa8b', '#f3722c', '#6c757d'],
+    illust: ['#d9542c', '#2f7fa3', '#5f9a4c', '#c0607e', '#e0a020', '#7a5aa8', '#1f9a8a', '#b8742e', '#4f6fbf', '#8a7a66'],
+    nier: ['#4a463b', '#8a3f2c', '#3f5a5f', '#6b5a3a', '#5e4a63', '#40593a', '#7a6a4a', '#2f4a6a', '#6a3f4a', '#8f8a76'],
   };
   const darkMQ2 = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   function activeTheme(name) {
@@ -643,10 +716,22 @@
     return darkMQ2 && darkMQ2.matches ? 'night' : 'clean';
   }
   const isDarkTheme = (name) => !!THEME_INFO[activeTheme(name)].dark;
+  let lastTheme = '';
+  function themeFx(th) {
+    const old = document.getElementById('themeFx'); if (old) old.remove();
+    const d = document.createElement('div'); d.id = 'themeFx'; d.className = th;
+    const label = th === 'nier' ? 'SYSTEM // 機械紀錄' : th === 'illust' ? '〜 觀光繪地圖 〜' : THEME_INFO[th].name;
+    d.innerHTML = '<span class="fx-t">' + esc(label) + '</span>';
+    document.body.appendChild(d);
+    requestAnimationFrame(() => d.classList.add('go'));
+    setTimeout(() => d.remove(), 900);
+  }
   function applyTheme(preview) {
     const th = activeTheme(preview);
+    if (lastTheme && lastTheme !== th && (THEME_INFO[th].vec || THEME_INFO[lastTheme].vec)) themeFx(th);
+    lastTheme = th;
     document.documentElement.dataset.theme = th;
-    document.documentElement.dataset.style = th === 'clean' || th === 'night' ? 'modern' : 'classic';
+    document.documentElement.dataset.style = th === 'clean' || th === 'night' || th === 'illust' ? 'modern' : 'classic';
     const meta = document.querySelectorAll('meta[name="theme-color"]');
     const bg = getComputedStyle(document.documentElement).getPropertyValue('--paper').trim() || '#d4cfb8';
     meta.forEach((m) => { m.setAttribute('content', bg); m.removeAttribute('media'); });

@@ -37,6 +37,8 @@ def hav(a, b):
 calls = {'osrm': 0, 'nominatim': 0, 'google': 0, 'tiles': 0}
 SPEED = {'routed-foot': 1.3, 'routed-bike': 4.0, 'routed-car': 8.0}
 
+OFM = {'mode': 'ok'}
+
 def handle(route):
     url = route.request.url
     if 'tile.openstreetmap.org' in url or 'cartocdn' in url:
@@ -105,6 +107,15 @@ def handle(route):
         d = parse_qs(urlparse(url).query).get('start_date', ['2026-01-01'])[0]
         body = {'daily': {'time': [d], 'weather_code': [61], 'temperature_2m_max': [14.2], 'temperature_2m_min': [7.8], 'precipitation_probability_max': [70]}}
         return route.fulfill(status=200, content_type='application/json', headers={'Access-Control-Allow-Origin': '*'}, body=json.dumps(body))
+    if 'tiles.openfreemap.org' in url:
+        calls['ofm'] = calls.get('ofm', 0) + 1
+        if OFM['mode'] == 'fail':
+            return route.abort()
+        h = {'Access-Control-Allow-Origin': '*'}
+        if url.rstrip('/').endswith('/planet'):
+            tj = {'tilejson': '2.2.0', 'tiles': ['https://tiles.openfreemap.org/planet/test/{z}/{x}/{y}.pbf'], 'minzoom': 0, 'maxzoom': 14, 'vector_layers': [{'id': x, 'fields': {}} for x in ['water', 'waterway', 'landcover', 'landuse', 'park', 'building', 'transportation', 'transportation_name', 'boundary', 'water_name', 'place', 'poi']]}
+            return route.fulfill(status=200, content_type='application/json', headers=h, body=json.dumps(tj))
+        return route.fulfill(status=200, content_type='application/x-protobuf', headers=h, body=b'')
     if url.startswith(BASE):
         return route.continue_()
     return route.abort()
@@ -400,6 +411,21 @@ with sync_playwright() as p:
     for th in ['washi', 'tide', 'relic']:
         vp.click('#btnSettings'); vp.click(f'.themeopt[data-theme={th}]'); vp.click('[data-mact=ok]'); vp.wait_for_timeout(250)
         vp.screenshot(path=f'{OUT}/24_theme_{th}.png')
+    # 新主題：觀光繪地圖、機械紀錄（風格底圖連不到時要退回一般地圖）
+    for th in ['illust', 'nier']:
+        vp.click('#btnSettings'); vp.click(f'.themeopt[data-theme={th}]'); vp.click('[data-mact=ok]'); vp.wait_for_timeout(300)
+        check(f'{th} 主題切換有過場動畫', vp.locator('#themeFx').count() == 1)
+        for _ in range(40):
+            if vp.evaluate('!!(window.__vecFail || window.__vecFirstMs) && !document.querySelector(".leaflet-tile-pane img.leaflet-tile")'): break
+            vp.wait_for_timeout(500)
+        st = vp.evaluate("[document.documentElement.dataset.theme, document.documentElement.dataset.style, !!window.maplibregl, document.querySelectorAll('.leaflet-tile-pane img.leaflet-tile').length, window.__vecFail||'', (window.__vecErrs||[]).slice(0,3)]")
+        check(f'{th} 主題套用、風格底圖載入完成後移除一般圖磚', st[0] == th and st[2] and st[3] == 0 and st[4] == '' and vp.evaluate("document.documentElement.classList.contains('vec-ready') && !!document.querySelector('.leaflet-tile-pane canvas')"), str(st))
+        vp.screenshot(path=f'{OUT}/24_theme_{th}.png')
+        vp.evaluate("document.querySelector('#tabs button[data-tab=plan]').click()"); vp.wait_for_timeout(300)
+        vp.evaluate("document.getElementById('tabBody').scrollTop = 420"); vp.wait_for_timeout(200)
+        vp.screenshot(path=f'{OUT}/24_theme_{th}_panel.png')
+        vp.evaluate("window.__vecFail=''; window.__vecFirstMs=0")
+    vp.click('#btnSettings'); vp.click('.themeopt[data-theme=relic]'); vp.click('[data-mact=ok]'); vp.wait_for_timeout(300)
     # 今天模式＋天氣：出發日設成今天
     import datetime
     today = datetime.datetime.now().strftime('%Y-%m-%d')
@@ -587,6 +613,16 @@ with sync_playwright() as p:
     vp.click('#toast button'); vp.wait_for_timeout(300)
     check('刪除天數可以復原', vp.evaluate('TripApp.trip().days') == nd)
     check('v1.3 頁面沒有錯誤', not verr, '; '.join(verr[:3]))
+    # 風格底圖連不到 → 退回一般地圖
+    OFM['mode'] = 'fail'
+    vp.evaluate("window.__vecFail=''")
+    vp.click('#btnSettings'); vp.click('.themeopt[data-theme=illust]'); vp.click('[data-mact=ok]'); vp.wait_for_timeout(300)
+    for _ in range(40):
+        if vp.evaluate('!!window.__vecFail'): break
+        vp.wait_for_timeout(500)
+    fb = vp.evaluate("[window.__vecFail||'', document.querySelectorAll('.leaflet-tile-pane img.leaflet-tile').length]")
+    check('風格底圖連不到時，自動退回一般地圖（不會一片空白）', fb[0] != '' and fb[1] > 0, str(fb))
+    OFM['mode'] = 'ok'
     vctx.close()
 
     # 14) 桌機版面

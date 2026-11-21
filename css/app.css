@@ -27,7 +27,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--ink); box-shadow
 textarea { resize: vertical; }
 hr { border: 0; border-top: 1px solid var(--hair); margin: 16px 0; }
 [hidden] { display: none !important; }
-.ic { width: 1.2em; height: 1.2em; flex: none; vertical-align: -0.24em; stroke-width: 1.6; overflow: visible; }
+.ic { width: 1.2em; height: 1.2em; flex: none; vertical-align: -0.24em; stroke-width: 1.6; stroke-linecap: square; stroke-linejoin: miter; overflow: visible; }
 
 /* ---------- 頂列 ---------- */
 #topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; display: flex; gap: 6px; align-items: center;
@@ -494,3 +494,176 @@ html[data-style="modern"] .bk { box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 2px 10p
 .mealtag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: var(--warn-bg, #fdecc8); color: var(--warn-fg, #7a4b00); vertical-align: 1px; }
 .route-bar .chips { flex-basis: 100%; order: 2; }
 .route-bar > .btn { order: 1; margin-left: auto; }
+
+/* =========================================================
+   觀光繪地圖（illust）— 日系插畫：和紙、波浪海、緞帶、朱印
+   ========================================================= */
+html[data-theme="illust"] {
+  --paper: #f6efdc; --card: #fffaf0; --soft: #efe4c9; --ink: #3d2f24; --ink-soft: #5a4636;
+  --muted: #8a7560; --line: rgba(61, 47, 36, .26); --hair: rgba(61, 47, 36, .12);
+  --pri: #d9542c; --on-pri: #fffaf0; --accent: #d9542c; --ok: #5f9a4c; --danger: #c0392b;
+  --warn-bg: #fbe7c6; --warn-fg: #7a4a12; --r: 14px; --tiles: none;
+  --sans: "Hiragino Maru Gothic ProN", "Yu Gothic UI", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --mono: var(--sans);
+  --washi: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .45 0 0 0 0 .35 0 0 0 0 .2 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E");
+  --wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='8'%3E%3Cpath d='M0 4 q7 -6 14 0 t14 0' fill='none' stroke='%23d9542c' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  --brush: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='10' preserveAspectRatio='none'%3E%3Cpath d='M2 6 C30 2 60 9 118 4' fill='none' stroke='%23d9542c' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+html[data-theme="illust"] .ic { stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+html[data-theme="illust"] body, html[data-theme="illust"] #panel, html[data-theme="illust"] .modal-card { background-image: var(--washi); }
+html[data-theme="illust"] #topbar { background: var(--paper) var(--washi); box-shadow: none; border-bottom: 0; }
+html[data-theme="illust"] #topbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -7px; height: 8px; pointer-events: none;
+  background: radial-gradient(circle at 7px -2px, var(--paper) 7px, transparent 7.5px) 0 0 / 14px 8px repeat-x; filter: drop-shadow(0 1px 0 rgba(61,47,36,.18)); }
+html[data-theme="illust"] #tripSelect { background: var(--card); box-shadow: inset 0 0 0 1.5px var(--line); }
+html[data-theme="illust"] .icon-btn, html[data-theme="illust"] .fab { background: var(--card); box-shadow: inset 0 0 0 1.5px var(--line), 0 2px 0 rgba(61,47,36,.12); border-radius: 50%; }
+html[data-theme="illust"] .leaflet-bar { border-radius: 18px !important; box-shadow: inset 0 0 0 1.5px var(--line), 0 2px 0 rgba(61,47,36,.12) !important; }
+/* 地圖：紙邊暈影、羅盤 */
+html[data-theme="illust"] #map::after { content: ""; position: absolute; inset: 0; z-index: 450; pointer-events: none; box-shadow: inset 0 0 0 1px rgba(61,47,36,.12), inset 0 0 70px rgba(150,110,60,.16); }
+html[data-theme="illust"] #map::before { content: ""; position: absolute; left: 12px; bottom: 26px; width: 54px; height: 54px; z-index: 451; pointer-events: none; opacity: .85;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Ccircle cx='30' cy='30' r='22' fill='%23fffaf0' stroke='%233d2f24' stroke-width='1.4'/%3E%3Ccircle cx='30' cy='30' r='17' fill='none' stroke='%233d2f24' stroke-width='.7' stroke-dasharray='1.5 2.5'/%3E%3Cpath d='M30 9 L34 30 L30 27 L26 30 Z' fill='%23d9542c'/%3E%3Cpath d='M30 51 L26 30 L30 33 L34 30 Z' fill='%233d2f24'/%3E%3Ctext x='30' y='7' text-anchor='middle' font-size='7' font-family='sans-serif' font-weight='700' fill='%23d9542c'%3EN%3C/text%3E%3C/svg%3E") center / contain no-repeat; }
+@media (min-width: 900px) { html[data-theme="illust"] #map::before { bottom: 30px; } }
+/* 面板：紙膠帶把手 */
+html[data-theme="illust"] #panel { border-radius: 22px 22px 0 0; box-shadow: 0 -2px 0 rgba(61,47,36,.1), 0 -8px 24px rgba(80,55,30,.14); }
+html[data-theme="illust"] #sheetHandle span { width: 66px; height: 15px; border-radius: 0; background: repeating-linear-gradient(90deg, rgba(217,84,44,.55) 0 6px, rgba(217,84,44,.38) 6px 12px);
+  transform: rotate(-2deg); clip-path: polygon(0 10%, 4% 0, 8% 12%, 12% 0, 88% 0, 92% 14%, 96% 0, 100% 10%, 100% 90%, 96% 100%, 92% 86%, 88% 100%, 12% 100%, 8% 88%, 4% 100%, 0 90%); }
+html[data-theme="illust"] #tabs { background: transparent; box-shadow: inset 0 0 0 1.5px var(--line); border-radius: 999px; }
+html[data-theme="illust"] #tabs button { border-radius: 999px; }
+html[data-theme="illust"] #tabs button.on { background: var(--card); color: var(--pri); box-shadow: 0 2px 0 rgba(61,47,36,.12); }
+html[data-theme="illust"] #tabs button.on::after { content: ""; position: absolute; left: 22%; right: 22%; bottom: 2px; height: 6px; background: var(--brush) center / 100% 100% no-repeat; }
+/* 區段標題：波浪點綴 */
+html[data-theme="illust"] .sec { color: var(--ink-soft); font-weight: 700; gap: 8px; }
+html[data-theme="illust"] .sec::before { content: ""; width: 28px; height: 8px; background: var(--wave) left / 28px 8px no-repeat; flex: none; }
+html[data-theme="illust"] .sec::after { display: block; content: ""; flex: 1; height: 8px; border: 0; background: var(--wave) left / 28px 8px repeat-x; opacity: .35; }
+/* 卡片：手繪框＋錯版陰影 */
+html[data-theme="illust"] .day, html[data-theme="illust"] .base-row, html[data-theme="illust"] .today, html[data-theme="illust"] .result, html[data-theme="illust"] .themeopt, html[data-theme="illust"] .msg {
+  background: var(--card); border: 0; border-radius: 16px; box-shadow: inset 0 0 0 1.5px var(--line), 3px 3px 0 #ecdcbd; }
+html[data-theme="illust"] .day { padding: 4px 14px 12px; margin: 14px 0 20px; }
+/* 天數：緞帶 */
+html[data-theme="illust"] .day-h b { background: var(--c); color: #fffaf0; padding: 4px 22px 4px 12px; border-radius: 4px 0 0 4px; font: 700 16px var(--sans);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 10px) 50%, 100% 100%, 0 100%); margin-left: -22px; box-shadow: none; position: relative; }
+html[data-theme="illust"] .day-h b::before { width: 8px; height: 8px; border-radius: 50%; background: #fffaf0; transform: none; }
+html[data-theme="illust"] .day-h { border-bottom: 1.5px dashed var(--line); }
+/* 站點編號：朱印 */
+html[data-theme="illust"] .num { background: var(--c); color: #fffaf0; box-shadow: 0 0 0 2px var(--card), 0 0 0 3.5px var(--c); transform: rotate(-8deg); font: 700 12px var(--sans); }
+html[data-theme="illust"] .num.base { border-radius: 8px; transform: none; box-shadow: 0 0 0 2px var(--card), 0 0 0 3.5px var(--ink); background: var(--ink); }
+html[data-theme="illust"] .stop a { font-weight: 700; }
+html[data-theme="illust"] .leg { border-left: 2.5px dotted var(--line); }
+html[data-theme="illust"] .time { color: var(--pri); font: 700 12px var(--sans); }
+html[data-theme="illust"] .mealtag { background: #fde3cf; color: #9a3a14; box-shadow: inset 0 0 0 1px rgba(154,58,20,.35); }
+/* 晶片：虛線圓角，選取時用當天顏色 */
+html[data-theme="illust"] .chip { border: 1.5px dashed var(--line); background: var(--card); border-radius: 999px; font: 700 13px var(--sans); box-shadow: none; }
+html[data-theme="illust"] .chip.on { background: var(--c, var(--ink)); border: 1.5px solid var(--c, var(--ink)); color: #fffaf0; }
+html[data-theme="illust"] .chip.on::before { background: #fffaf0; box-shadow: none; }
+/* 按鈕 */
+html[data-theme="illust"] .btn { border: 0; border-radius: 999px; background: var(--card); box-shadow: inset 0 0 0 1.5px var(--line), 0 2px 0 rgba(61,47,36,.1); color: var(--ink); font-weight: 700; }
+html[data-theme="illust"] .btn:hover { background: var(--soft); color: var(--ink); }
+html[data-theme="illust"] .btn.primary { background: var(--pri); color: var(--on-pri); box-shadow: 0 3px 0 #a83a1a; }
+html[data-theme="illust"] .btn.primary:active { transform: translateY(2px); box-shadow: 0 1px 0 #a83a1a; }
+html[data-theme="illust"] .btn.danger { background: #fbe3dc; color: var(--danger); box-shadow: inset 0 0 0 1.5px rgba(192,57,43,.35); }
+html[data-theme="illust"] input, html[data-theme="illust"] select, html[data-theme="illust"] textarea { background: var(--card); box-shadow: inset 0 0 0 1.5px var(--line); }
+/* 地圖標記：貼紙＋緞帶標籤 */
+html[data-theme="illust"] .pin { border: 3px solid #fffaf0; box-shadow: 0 3px 0 rgba(61,47,36,.28); transform: rotate(-4deg); }
+html[data-theme="illust"] .pin::before { border-top-color: #fffaf0; }
+html[data-theme="illust"] .pin.base { border-radius: 11px; background: var(--ink); }
+html[data-theme="illust"] .leaflet-tooltip.plabel { background: #fffaf0; border: 1.5px solid var(--ink); border-radius: 999px !important; box-shadow: 2px 2px 0 rgba(61,47,36,.2); font: 700 12px var(--sans); color: var(--ink); }
+html[data-theme="illust"] .leaflet-popup-content-wrapper { border-radius: 18px !important; background: var(--card) var(--washi); box-shadow: inset 0 0 0 1.5px var(--line), 4px 4px 0 rgba(61,47,36,.15); }
+/* 對話框、提示 */
+html[data-theme="illust"] .modal-card { border-radius: 22px; background-color: var(--paper); box-shadow: inset 0 0 0 1.5px var(--line), 5px 5px 0 rgba(61,47,36,.18); }
+html[data-theme="illust"] .modal-card h3 { background: transparent; color: var(--ink); padding-bottom: 14px; }
+html[data-theme="illust"] .modal-card h3::after { content: ""; position: absolute; left: 20px; width: 90px; bottom: 4px; height: 8px; background: var(--brush) center / 100% 100% no-repeat; }
+html[data-theme="illust"] #toast { background: var(--ink); color: #fffaf0; border-radius: 14px; box-shadow: 3px 3px 0 var(--pri); }
+html[data-theme="illust"] #toast::before { display: block; width: 26px; height: 10px; background: rgba(217,84,44,.7); position: absolute; top: -5px; left: 18px; transform: rotate(-4deg); }
+
+/* =========================================================
+   機械紀錄（nier）— 米褐、髮絲線、L 轉角框、菱形、反白滑入
+   ========================================================= */
+html[data-theme="nier"] {
+  --paper: #d6d0b8; --card: #dcd7c0; --soft: #cbc5ab; --ink: #4a463b; --ink-soft: #5e5a4d;
+  --muted: #7c7766; --line: rgba(74, 70, 59, .72); --hair: rgba(74, 70, 59, .25);
+  --pri: #4a463b; --on-pri: #dcd7c0; --accent: #a8553c; --ok: #4f6b3a; --danger: #a8553c;
+  --warn-bg: #cfc29c; --warn-fg: #5a3f12; --r: 0px; --tiles: none;
+  --mono: "SF Mono", ui-monospace, "Cascadia Mono", Menlo, Consolas, "Noto Sans TC", monospace;
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .29 0 0 0 0 .27 0 0 0 0 .23 0 0 0 .06 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23f)'/%3E%3C/svg%3E");
+  --cf: var(--ink);
+  --corners: linear-gradient(var(--cf), var(--cf)) 0 0 / 11px 1.5px, linear-gradient(var(--cf), var(--cf)) 0 0 / 1.5px 11px,
+    linear-gradient(var(--cf), var(--cf)) 100% 0 / 11px 1.5px, linear-gradient(var(--cf), var(--cf)) 100% 0 / 1.5px 11px,
+    linear-gradient(var(--cf), var(--cf)) 0 100% / 11px 1.5px, linear-gradient(var(--cf), var(--cf)) 0 100% / 1.5px 11px,
+    linear-gradient(var(--cf), var(--cf)) 100% 100% / 11px 1.5px, linear-gradient(var(--cf), var(--cf)) 100% 100% / 1.5px 11px;
+}
+html[data-theme="nier"] .ic { stroke-width: 1.15; }
+html[data-theme="nier"] body { letter-spacing: .05em; }
+html[data-theme="nier"] #panel, html[data-theme="nier"] .modal-card { background-image: var(--grain), repeating-linear-gradient(0deg, rgba(74,70,59,.035) 0 1px, transparent 1px 3px); }
+html[data-theme="nier"] #topbar { border-bottom: 3px double var(--line); }
+/* 地圖：HUD 格線＋掃描線（只蓋地圖，不蓋文字） */
+html[data-theme="nier"] #map::after { content: ""; position: absolute; inset: 0; z-index: 450; pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(74,70,59,.05) 0 1px, transparent 1px 3px),
+    linear-gradient(rgba(74,70,59,.09) 1px, transparent 1px) 0 0 / 80px 80px, linear-gradient(90deg, rgba(74,70,59,.09) 1px, transparent 1px) 0 0 / 80px 80px; }
+html[data-theme="nier"] #map::before { content: "MAP // FIELD SURVEY"; position: absolute; left: 10px; bottom: 22px; z-index: 451; pointer-events: none;
+  font: 600 10px var(--mono); letter-spacing: .3em; color: var(--ink); background: color-mix(in srgb, var(--paper) 80%, transparent); padding: 3px 8px 3px 18px;
+  border: 1px solid var(--line); }
+/* 四角 L 形轉角框 */
+html[data-theme="nier"] .day, html[data-theme="nier"] .base-row, html[data-theme="nier"] .today, html[data-theme="nier"] .modal-card, html[data-theme="nier"] .themeopt, html[data-theme="nier"] .msg { position: relative; border-color: var(--hair); }
+html[data-theme="nier"] .day::before, html[data-theme="nier"] .base-row::before, html[data-theme="nier"] .today::before, html[data-theme="nier"] .themeopt::before, html[data-theme="nier"] .msg::before {
+  content: ""; position: absolute; inset: -4px; width: auto; height: auto; border: 0; pointer-events: none; background: var(--corners); background-repeat: no-repeat; }
+html[data-theme="nier"] .day::after { content: ""; position: absolute; inset: 3px; width: auto; height: auto; border: 1px solid var(--hair); pointer-events: none; }
+html[data-theme="nier"] .day { padding: 4px 14px 10px; margin: 16px 0 22px; }
+html[data-theme="nier"] .day-h { border-bottom: 3px double var(--line); }
+html[data-theme="nier"] .day-h b { font: 600 15px var(--mono); letter-spacing: .22em; }
+html[data-theme="nier"] .day-h b::before { width: 9px; height: 9px; background: transparent; box-shadow: inset 0 0 0 1.5px var(--ink), inset 0 0 0 3px var(--paper), inset 0 0 0 9px var(--c); }
+/* 區段編號 SYS.01 // */
+html[data-theme="nier"] #tabBody { counter-reset: sec; }
+html[data-theme="nier"] .sec { counter-increment: sec; color: var(--ink); letter-spacing: .26em; }
+html[data-theme="nier"] .sec::before { content: "SYS." counter(sec, decimal-leading-zero); padding: 1px 6px; background: var(--ink); color: var(--paper); letter-spacing: .1em; }
+html[data-theme="nier"] .sec::after { border-top: 0; height: 1px; background: linear-gradient(90deg, var(--line), transparent); }
+html[data-theme="nier"] .lbl::before { content: ""; display: inline-block; width: 5px; height: 5px; margin-right: 7px; border: 1px solid var(--ink); transform: rotate(45deg) translateY(-2px); }
+/* 反白從左滑入（像遊戲選單游標） */
+html[data-theme="nier"] .btn, html[data-theme="nier"] .result, html[data-theme="nier"] .chip, html[data-theme="nier"] #tabs button, html[data-theme="nier"] .fab, html[data-theme="nier"] .icon-btn {
+  background: linear-gradient(var(--pri), var(--pri)) no-repeat 0 0 / 0% 100%; transition: background-size .22s ease-out, color .18s; }
+html[data-theme="nier"] .btn:hover, html[data-theme="nier"] .result:hover, html[data-theme="nier"] .chip:hover, html[data-theme="nier"] #tabs button:hover, html[data-theme="nier"] .fab:hover, html[data-theme="nier"] .icon-btn:hover {
+  background-color: transparent; background-size: 100% 100%; color: var(--on-pri); }
+html[data-theme="nier"] .fab, html[data-theme="nier"] .icon-btn { background-color: var(--card); position: relative; }
+html[data-theme="nier"] .fab::after, html[data-theme="nier"] .icon-btn::after { content: ""; position: absolute; right: 2px; bottom: 2px; width: 3px; height: 3px; background: currentColor; }
+html[data-theme="nier"] .btn.primary, html[data-theme="nier"] .chip.on, html[data-theme="nier"] #tabs button.on { background-size: 100% 100%; color: var(--on-pri); }
+html[data-theme="nier"] .btn.primary { outline: 1px solid var(--line); outline-offset: 3px; box-shadow: 0 0 0 1px var(--paper) inset; }
+html[data-theme="nier"] #tabs button.on::before { animation: nier-blink 1.1s steps(2, end) infinite; }
+html[data-theme="nier"] .chip { font: 600 12px var(--mono); letter-spacing: .14em; }
+@keyframes nier-blink { 50% { opacity: 0; } }
+/* 站點：方形編號、刻度時間軸 */
+html[data-theme="nier"] .num { border-radius: 0; background: var(--paper); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink), inset 0 -3px 0 var(--c); font: 600 11px var(--mono); }
+html[data-theme="nier"] .num.base { background: var(--ink); color: var(--paper); box-shadow: 0 0 0 1px var(--paper), 0 0 0 2px var(--ink); }
+html[data-theme="nier"] .leg { border-left: 0; background: repeating-linear-gradient(180deg, var(--line) 0 1px, transparent 1px 6px) 0 0 / 7px 100% no-repeat, linear-gradient(var(--line), var(--line)) 0 0 / 1px 100% no-repeat; }
+html[data-theme="nier"] .stop a { letter-spacing: .06em; }
+html[data-theme="nier"] .time { color: var(--ink); background: var(--soft); padding: 0 4px; }
+html[data-theme="nier"] .mealtag { border-radius: 0; background: transparent; color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); letter-spacing: .1em; }
+/* 地圖標記：菱形框 */
+html[data-theme="nier"] .pin { width: 26px; height: 26px; margin: 4px 0 0 3px; border-radius: 0; transform: rotate(45deg); border: 1.5px solid var(--ink); box-shadow: 0 0 0 2px var(--paper), 0 0 0 3px var(--ink); }
+html[data-theme="nier"] .pin .ic { transform: rotate(-45deg); width: 17px; height: 17px; margin: -8.5px 0 0 -8.5px; stroke-width: 1.6; }
+html[data-theme="nier"] .pin::before, html[data-theme="nier"] .pin::after { display: none; }
+html[data-theme="nier"] .pin.base { transform: none; background: var(--ink); }
+html[data-theme="nier"] .pin.base .ic { transform: none; }
+html[data-theme="nier"] .leaflet-marker-icon.hl .pin { transform: rotate(45deg) scale(1.25); }
+html[data-theme="nier"] .leaflet-tooltip.plabel { background: var(--ink); color: var(--paper); border: 0; border-radius: 0 !important; box-shadow: 2px 2px 0 rgba(74,70,59,.3); font: 600 11px var(--mono); letter-spacing: .12em; }
+html[data-theme="nier"] .leaflet-popup-content-wrapper { background: var(--card) var(--grain); border: 1px solid var(--line); box-shadow: 4px 4px 0 rgba(74,70,59,.25); }
+/* 對話框、提示 */
+html[data-theme="nier"] .modal-card h3 { letter-spacing: .2em; }
+html[data-theme="nier"] .modal-card h3::before { content: ">"; width: auto; height: auto; background: none; font-family: var(--mono); animation: nier-blink 1.1s steps(2, end) infinite; }
+html[data-theme="nier"] #toast::before { animation: nier-blink 1.1s steps(2, end) infinite; }
+html[data-theme="nier"] .leaflet-control-attribution, html[data-theme="nier"] .leaflet-control-scale-line { font-family: var(--mono); letter-spacing: .08em; }
+
+/* ---------- 主題切換過場 ---------- */
+#themeFx { position: fixed; inset: 0; z-index: 5000; pointer-events: none; background: var(--paper); }
+#themeFx.go { animation: fx-wipe .62s cubic-bezier(.7,0,.2,1) forwards; }
+@keyframes fx-wipe { 0% { clip-path: inset(0 0 0 0); } 35% { clip-path: inset(0 0 0 0); } 100% { clip-path: inset(0 0 100% 0); } }
+#themeFx.illust { background: var(--paper) var(--washi); }
+#themeFx.illust::after { content: ""; position: absolute; left: 0; right: 0; bottom: -10px; height: 12px; background: radial-gradient(circle at 10px 0, var(--paper) 10px, transparent 10.5px) 0 0 / 20px 12px repeat-x; }
+#themeFx.illust .fx-t { color: var(--pri); }
+#themeFx.nier { background: repeating-linear-gradient(0deg, var(--ink) 0 2px, var(--paper) 2px 6px); }
+#themeFx.nier.go { animation: fx-bars .7s steps(7, end) forwards; }
+@keyframes fx-bars { 0%, 30% { clip-path: inset(0 0 0 0); } 100% { clip-path: inset(0 0 0 100%); } }
+#themeFx .fx-t { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); font: 700 14px var(--mono); letter-spacing: .4em; color: var(--ink); background: var(--paper); padding: 6px 14px; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) {
+  #themeFx.go, #themeFx.nier.go { animation: fx-fade .35s ease forwards; }
+  @keyframes fx-fade { from { opacity: 1; } to { opacity: 0; } }
+  html[data-theme="nier"] #tabs button.on::before, html[data-theme="nier"] .modal-card h3::before, html[data-theme="nier"] #toast::before { animation: none; }
+  html[data-theme="nier"] .btn, html[data-theme="nier"] .chip, html[data-theme="nier"] #tabs button { transition: none; }
+}
