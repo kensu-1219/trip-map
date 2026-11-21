@@ -577,7 +577,15 @@ with sync_playwright() as p:
     vp.wait_for_timeout(300)
     box = vp.evaluate("(()=>{const c=document.querySelector('.route-bar .chips');return [c.scrollWidth,c.clientWidth,c.getBoundingClientRect().height]})()")
     check('12 天的天數晶片換行顯示（不用橫向捲動）', box[0] <= box[1] + 2 and box[2] > 50, str(box))
+    dot = vp.evaluate("getComputedStyle(document.querySelector('.route-bar .chip[data-d=\"1\"]'),'::before').backgroundColor")
+    check('天數晶片的色點正常顯示（HTML 屬性沒壞）', dot not in ('rgba(0, 0, 0, 0)', 'transparent') and vp.locator('.route-bar .chip[data-d="1"] .en').count() == 1, dot)
     vp.locator('.route-bar').scroll_into_view_if_needed(); vp.screenshot(path=f'{OUT}/38_day_chips.png')
+    # 刪除某一天
+    nd = vp.evaluate('TripApp.trip().days')
+    vp.locator('[data-act=dayMenu][data-d="2"]').click(); vp.click('[data-mact=remove]'); vp.wait_for_timeout(300)
+    check('刪除第 2 天：天數 −1、該天地點回到未排', vp.evaluate('TripApp.trip().days') == nd - 1)
+    vp.click('#toast button'); vp.wait_for_timeout(300)
+    check('刪除天數可以復原', vp.evaluate('TripApp.trip().days') == nd)
     check('v1.3 頁面沒有錯誤', not verr, '; '.join(verr[:3]))
     vctx.close()
 

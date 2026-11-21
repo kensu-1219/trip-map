@@ -895,6 +895,30 @@
 
   const range0 = (n) => Array.from({ length: n }, (_, i) => i);
 
+  /** 第 d 天的地點全部移回「未排」 */
+  function clearDay(trip, d) {
+    let n = 0;
+    trip.places.forEach((p) => { if (p.day === d) { p.day = 0; p.locked = false; p.order = 0; n++; } });
+    return n;
+  }
+  /** 刪掉第 d 天：當天地點移回未排、後面的天往前移、各晚住宿跟著移，天數 −1 */
+  function removeDay(trip, d) {
+    const n = clearDay(trip, d);
+    trip.places.forEach((p) => { if (p.day > d) p.day -= 1; });
+    if (trip.dayBase) {
+      const nb = {};
+      for (const [k, v] of Object.entries(trip.dayBase)) {
+        const kd = +k;
+        if (kd < d) nb[kd] = v;
+        else if (kd > d) nb[kd - 1] = { ...v, id: 'base-' + (kd - 1) };
+      }
+      trip.dayBase = nb;
+    }
+    trip.days = Math.max(1, (trip.days | 0) - 1);
+    trip.prevPlan = null;
+    return n;
+  }
+
   /** 從備註讀標記：「第2晚」「第1-3晚」「D2住」→ 住宿；「午餐」「D3晚餐」→ 餐；「D2」「第2天」→ 指定天 */
   function parseNoteTags(note) {
     const t = String(note || '').normalize('NFKC');
@@ -1334,6 +1358,6 @@
     cleanKey, parseGeoJSON, parseTakeoutCSV, parseKML, newTrip, sanitizeTrip, sanitizePlace, mergePlaces,
     MODES, estimateLeg, suggestMode, gmapsDirUrl, gmapsPlaceUrl, gmapsDayUrl, appleDirUrl, applePlaceUrl, timeline, hm, toMin, centroid, balancedClusters,
     orderStops, planDays, pathLen, dayStops, legKey, parseOsrm, decodePolyline, parseGoogleRoute,
-    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, CAT_COLOR, BOOK_TYPES, sanitizeBooking, bookingsOn, sanitizeExpense, settle, parseItineraryText, cleanPlaceName, wikiPick, wikiLangs, PHOTO_GEO_CATS, sanitizePhoto, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel, parseNoteTags, applyNoteTags, placeMeals, dayStartTime, departDeadline, CLEAR_MIN, CHECKIN_MIN,
+    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, CAT_COLOR, BOOK_TYPES, sanitizeBooking, bookingsOn, sanitizeExpense, settle, parseItineraryText, cleanPlaceName, wikiPick, wikiLangs, PHOTO_GEO_CATS, sanitizePhoto, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel, clearDay, removeDay, parseNoteTags, applyNoteTags, placeMeals, dayStartTime, departDeadline, CLEAR_MIN, CHECKIN_MIN,
   };
 });

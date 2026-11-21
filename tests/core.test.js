@@ -492,3 +492,16 @@ test('排程：晚餐排最後、午餐排在接近中午', () => {
   const li = seq.indexOf('午餐店');
   assert.ok(li >= 1 && li <= 3, '午餐位置 ' + seq.join('>'));
 });
+
+test('刪除某一天：地點回未排、後面往前移、住宿跟著移', () => {
+  const t = C.newTrip('x'); t.days = 3;
+  t.dayBase = { 1: { name: 'H1', lat: 1, lng: 1, id: 'base-1' }, 2: { name: 'H2', lat: 2, lng: 2, id: 'base-2' }, 3: { name: 'H3', lat: 3, lng: 3, id: 'base-3' } };
+  t.places = [1, 2, 3].map((d) => C.sanitizePlace({ name: 'P' + d, lat: 35 + d / 100, lng: 139, day: d, locked: true }));
+  C.removeDay(t, 2);
+  assert.strictEqual(t.days, 2);
+  assert.deepStrictEqual(t.places.map((p) => p.day), [1, 0, 2]);
+  assert.strictEqual(t.places[1].locked, false);
+  assert.strictEqual(t.dayBase[2].name, 'H3'); assert.strictEqual(t.dayBase[3], undefined);
+  const u = C.newTrip('y'); u.days = 2; u.places = [C.sanitizePlace({ name: 'A', lat: 1, lng: 1, day: 2 })];
+  assert.strictEqual(C.clearDay(u, 2), 1); assert.strictEqual(u.places[0].day, 0); assert.strictEqual(u.days, 2);
+});

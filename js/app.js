@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.13.0';
+  const VERSION = '1.13.1';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -373,7 +373,7 @@
     if (!t.places.length) return h + welcomeHtml();
     h += todayCard(t);
     h += sec('// Route · 每日路線') + '<div class="row gap route-bar"><div class="chips grow">' + '<button class="chip' + (f ? '' : ' on') + '" data-act="filter" data-d="0"><span class="en">ALL</span><span class="zh">全部</span></button>' +
-      range(t.days).map((d) => '<button class="chip' + (f === d ? ' on' : '') + '" data-act="filter" data-d="' + d + '" style="--c:' + dc(d) + '>' + (t.days > 5 ? '<span class="en">D' + d + '</span><span class="zh">第' + d + '天</span>' : '<span class="en">D' + String(d).padStart(2, '0') + '</span><span class="zh">第 ' + d + ' 天</span>') + '</button>').join('') + '</div>' +
+      range(t.days).map((d) => '<button class="chip' + (f === d ? ' on' : '') + '" data-act="filter" data-d="' + d + '" style="--c:' + dc(d) + '">' + (t.days > 5 ? '<span class="en">D' + d + '</span><span class="zh">第' + d + '天</span>' : '<span class="en">D' + String(d).padStart(2, '0') + '</span><span class="zh">第 ' + d + ' 天</span>') + '</button>').join('') + '</div>' +
       '<button class="btn sm' + (S.ui.reorder ? ' primary' : '') + '" data-act="reorder">' + I('swap') + (S.ui.reorder ? ' 完成' : ' 調整順序') + '</button></div>';
     const pcost = t.places.reduce((a, p) => a + (p.cost || 0), 0), bcost = (t.bookings || []).reduce((a, b) => a + (b.cost || 0), 0);
     if (pcost + bcost) h += '<div class="muted small">' + I('money') + ' 預估總花費 ' + (t.currency ? esc(t.currency) + ' ' : '') + fmtMoney(pcost + bcost) + (bcost ? '（含預訂 ' + fmtMoney(bcost) + '）' : '') + '</div>';
@@ -407,7 +407,8 @@
     const seq = hasB && stops.length ? [ends.start].concat(stops, [ends.end]) : stops;
     const mainMode = mostCommonMode(infos);
     let h = '<div class="day" data-day="' + d + '"><div class="day-h" style="--c:' + dc(d) + '"><b>' + dayLabel(d) + '</b> <span>' + dayDate(t, d) + '</span>' +
-      (seq.length >= 2 ? '<span class="day-tools"><a class="btn sm ghost" target="_blank" rel="noopener" href="' + esc(C.gmapsDayUrl(seq, mainMode)) + '" title="整天路線在 Google 地圖開啟（Apple 地圖不支援多個中途點）">' + I('nav') + ' 整天導航</a></span>' : '') +
+      '<span class="day-tools">' + (seq.length >= 2 ? '<a class="btn sm ghost" target="_blank" rel="noopener" href="' + esc(C.gmapsDayUrl(seq, mainMode)) + '" title="整天路線在 Google 地圖開啟（Apple 地圖不支援多個中途點）">' + I('nav') + ' 整天導航</a>' : '') +
+      '<button class="icon-btn sm ghost" data-act="dayMenu" data-d="' + d + '" title="清空或刪除這一天">' + I('trash') + '</button></span>' +
       weatherChip(t, d) +
       '<span class="muted">' + stops.length + ' 站' + (stops.length ? ' · ' + C.hm(C.toMin(st)) + '–' + C.hm(tl.end) + ' · 移動 ' + (est ? '約 ' : '') + C.fmtDur(move) + ' · ' + C.fmtDist(dist) + ' · 停留 ' + C.fmtDur(stay) : '') +
       (late ? ' <b class="warn">· 趕不上飛機：' + C.hm(tl.end) + ' 才到機場，建議 ' + C.hm(C.departDeadline(t)) + ' 前到（起飛前 2 小時）</b>' : '') +
@@ -1234,6 +1235,22 @@
     } else run();
   }
 
+  function dayMenu(d) {
+    const t = trip();
+    const n = C.dayStops(t, d).length;
+    openModal('<h3>第 ' + d + ' 天</h3><p class="muted">這天有 ' + n + ' 個地點。兩種做法地點都不會被刪掉，會回到「未排入」。</p>' +
+      '<button class="btn block" data-mact="clear"' + (n ? '' : ' disabled') + '>' + I('undo') + ' 清空這天（保留這一天，地點移回未排入）</button>' +
+      '<button class="btn danger block" data-mact="remove" style="margin-top:8px"' + (t.days > 1 ? '' : ' disabled') + '>' + I('trash') + ' 刪除這一天（天數 −1，後面的天往前移）</button>' +
+      '<div class="row gap end"><button class="btn" data-mact="close">取消</button></div>', {
+      clear: () => { snapshot(); C.clearDay(t, d); closeModal(); save(); renderAll(); toast('第 ' + d + ' 天已清空', 6000, undoAct); },
+      remove: () => {
+        snapshot(); C.removeDay(t, d);
+        if (S.ui.dayFilter > t.days || S.ui.dayFilter === d) S.ui.dayFilter = 0;
+        closeModal(); save(); renderAll(); toast('已刪除第 ' + d + ' 天，現在共 ' + t.days + ' 天', 6000, undoAct);
+      },
+    });
+  }
+
   function restorePlan() {
     const t = trip();
     if (!t.prevPlan) return;
@@ -1792,6 +1809,7 @@
         case 'setBase': setBaseModal(0); break;
         case 'setAirport': setAirportModal(el.dataset.k); break;
         case 'dayHotel': setBaseModal(+el.dataset.d); break;
+        case 'dayMenu': dayMenu(+el.dataset.d); break;
         case 'up': moveInDay(id, -1); break;
         case 'down': moveInDay(id, 1); break;
         case 'edit': map.closePopup(); editPlace(id); break;
