@@ -670,3 +670,9 @@ html[data-theme="nier"] .leaflet-control-attribution, html[data-theme="nier"] .l
 html[data-theme="nier"] .btn.accent { background-image: linear-gradient(var(--accent), var(--accent)); background-color: transparent; color: var(--accent); border-color: var(--accent); }
 html[data-theme="nier"] .btn.accent:hover { color: var(--on-pri); }
 html[data-theme="nier"] .btn.danger { background-image: linear-gradient(var(--danger), var(--danger)); }
+
+/* iPhone：輸入框字小於 16px 時 Safari 會自動放大畫面，觸控裝置一律用 16px */
+@media (hover: none) and (pointer: coarse) {
+  input, select, textarea { font-size: 16px !important; }
+  input[type="date"], input[type="time"] { min-height: 36px; }
+}
