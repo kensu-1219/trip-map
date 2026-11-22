@@ -61,7 +61,9 @@
     if (!urlMatch) return null;
     const url = urlMatch[0];
     // 分享文字常見格式：「店名\nhttps://maps.app.goo.gl/xxx」
-    const before = text.slice(0, urlMatch.index).trim().split('\n').pop().trim();
+    // Android 分享常是「店名\n地址\n連結」：取第一行店名，地址只取前段幫忙定位
+    const bl = text.slice(0, urlMatch.index).trim().split('\n').map((x) => x.trim()).filter(Boolean);
+    const before = bl.length >= 2 ? (bl[0] + ' ' + bl[1].replace(/^(日本|台灣|臺灣|Japan|Taiwan)\s*/i, '').replace(/〒?\d{3}-?\d{4}\s*/, '').slice(0, 24)).trim() : (bl[0] || '');
 
     if (/^https?:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/kgs)/i.test(url)) {
       return { short: true, url, name: before || '' };

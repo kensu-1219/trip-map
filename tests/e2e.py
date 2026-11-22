@@ -356,7 +356,11 @@ with sync_playwright() as p:
     page2.click('#tabs button[data-tab=add]'); page2.wait_for_timeout(200)
     page2.evaluate("navigator.clipboard.writeText('https://www.google.com/maps/place/%E6%B5%85%E8%8D%89%E9%A7%85/@35.7113,139.7976,17z')")
     page2.click('[data-act=pasteAdd]'); page2.wait_for_timeout(800)
-    check('「貼上剛複製的連結」直接加入', page2.evaluate("TripApp.trip().places.some(p=>p.name.includes('浅草駅'))"))
+    check('「貼上剛複製的連結」加入並問要排哪天', page2.evaluate("TripApp.trip().places.some(p=>p.name.includes('浅草駅'))") and page2.locator('.daygrid button').count() == page2.evaluate('TripApp.trip().days'))
+    page2.screenshot(path=f'{OUT}/40_ask_day.png')
+    page2.click('[data-mact=d2]'); page2.wait_for_timeout(500)
+    check('選第 2 天 → 排在第 2 天最後', page2.evaluate("(()=>{const s=TripApp.C.dayStops(TripApp.trip(),2);return s[s.length-1].name.includes('浅草駅')})()"))
+    page2.click('#tabs button[data-tab=add]'); page2.wait_for_timeout(200)
     bm = page2.locator('a.bm-link').get_attribute('href') or ''
     check('電腦書籤按鈕指向 ?add=', bm.startswith('javascript:') and '?add=' in bm)
     page2.click('#btnSettings'); page2.wait_for_timeout(200)
@@ -364,11 +368,26 @@ with sync_playwright() as p:
     page2.click('[data-mact=close]')
     # 外部一鍵加入（iOS 捷徑／書籤按鈕會開 ?add=）
     import urllib.parse as _up
-    page2.goto(BASE + '?add=' + _up.quote('https://www.google.com/maps/place/%E6%9D%B1%E4%BA%AC%E9%A7%85/@35.6812,139.7671,17z'))
-    page2.wait_for_timeout(1200)
-    check('?add= 連結一開就加進目前行程', page2.evaluate("TripApp.trip().places.some(p=>p.name.includes('東京駅'))") and '?add' not in page2.url)
+    page3 = page2.context.new_page()  # 另一個分頁：模擬書籤按鈕開新分頁
+    page3.goto(BASE + '?add=' + _up.quote('https://www.google.com/maps/place/%E6%9D%B1%E4%BA%AC%E9%83%BD%E5%BA%81/@35.6896,139.6917,17z/data=!3m1!4b1!4m6!3m5!1s0x0:0x0!8m2!3d35.6896342!4d139.6921007'))
+    page3.wait_for_selector('.daygrid'); page3.wait_for_timeout(300)
+    check('書籤按鈕開的 ?add= 分頁：加入並問要排哪天', page3.evaluate("TripApp.trip().places.some(p=>p.name.includes('東京都庁'))") and '?add' not in page3.url, page3.inner_text('#modalBody')[:80] + ' | ' + str(page3.evaluate("TripApp.trip().places.slice(-3).map(p=>p.name)")))
+    page3.click('[data-mact=d1]'); page3.wait_for_timeout(600)
+    check('排進第 1 天', page3.evaluate("TripApp.C.dayStops(TripApp.trip(),1).some(p=>p.name.includes('東京都庁'))"))
+    page2.wait_for_timeout(500)
+    check('原本開著的分頁自動跟著更新（不會被舊分頁蓋掉）', page2.evaluate("TripApp.C.dayStops(TripApp.trip(),1).some(p=>p.name.includes('東京都庁'))"))
+    page3.goto(BASE + '?add=' + _up.quote('https://www.google.com/maps/place/%E6%9D%B1%E4%BA%AC%E9%83%BD%E5%BA%81/@35.6896,139.6917,17z/data=!3m1!4b1!4m6!3m5!1s0x0:0x0!8m2!3d35.6896342!4d139.6921007'))
+    page3.wait_for_selector('.daygrid'); page3.wait_for_timeout(300)
+    check('同一地點再按一次：說「已經在清單裡」、可改排到別天', '已經在清單裡' in page3.inner_text('#modalBody'))
+    page3.click('[data-mact=d3]'); page3.wait_for_timeout(500)
+    check('改排到第 3 天（不會重複新增）', page3.evaluate("TripApp.trip().places.filter(p=>p.name.includes('東京都庁')).length") == 1 and page3.evaluate("TripApp.C.dayStops(TripApp.trip(),3).some(p=>p.name.includes('東京都庁'))"))
+    page3.close(); page2.wait_for_timeout(400)
+    # Android 分享（manifest share_target：title/text/url）
+    import json as _json
+    mf = _json.load(open(os.path.join(ROOT, 'manifest.webmanifest'), encoding='utf-8'))
+    check('Android 分享選單：manifest 有 share_target', mf.get('share_target', {}).get('params', {}).get('url') == 'url')
     # 旅宿當站點：到了就休息
-    page2.evaluate("(()=>{const t=TripApp.trip();const p=t.places.find(p=>p.name.includes('東京駅'));p.cat='hotel';p.day=1;p.order=99;TripApp.renderAll()})()"); page2.wait_for_timeout(400)
+    page2.evaluate("(()=>{const t=TripApp.trip();const p=t.places.find(p=>p.name.includes('東京都庁'));p.cat='hotel';p.day=1;p.order=99;TripApp.S.ui.dayFilter=0;TripApp.renderAll()})()"); page2.wait_for_timeout(400)
     page2.click('#tabs button[data-tab=plan]'); page2.wait_for_timeout(300)
     check('旅宿站點顯示「到旅宿休息」', '到旅宿休息' in page2.inner_text('#tabBody'))
     page2.context.close()

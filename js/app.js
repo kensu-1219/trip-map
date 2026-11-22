@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.18.0';
+  const VERSION = '1.19.0';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -911,7 +911,7 @@
       optRow('itinToggle', I('text'), '貼上行程文字', 'ChatGPT、部落格的行程，自動分天並標上地圖') +
       optRow('import', I('folder'), '匯入檔案', 'Google 已儲存清單 .csv、My Maps .kml、備份 .json') + '</div>';
     if (S.ui.itinOpen || S.ui.itin) h += itinHtml();
-    const bm = "javascript:(()=>{window.open('" + baseUrl() + "?add='+encodeURIComponent(location.href),'tripmap')})()";
+    const bm = "javascript:(()=>{window.open('" + baseUrl() + "?add='+encodeURIComponent(location.href),'_blank')})()";
     h += '<details class="help-d"><summary>從 Google 地圖一鍵加入</summary><ol class="help">' +
       '<li><b>iPhone</b>：在 Google 地圖點開地點 → 分享 →「複製連結」→ 切回這個 App，按畫面下方跳出的「貼上加入」（或上面的「貼上剛複製的連結」）。</li>' +
       '<li><b>電腦</b>：把這顆 <a class="bm-link" href="' + esc(bm) + '" data-act="bmHint" draggable="true">' + I('add') + ' 加到行程</a> 拖到瀏覽器書籤列。之後在 Google 地圖網頁點開地點，按書籤列的「加到行程」就好。</li>' +
@@ -1487,6 +1487,14 @@
       toast('已加到第 ' + toDay + ' 天');
       return r;
     }
+    if (S.ui.extAdd && (r.added.length || r.dup.length)) {
+      S.ui.extAdd = false;
+      // 重複的就拿清單裡原本那個點來排
+      const target = r.added.length ? r.added : r.dup.map((p) => t.places.find((e) => C.haversine(e, p) < 80 && (e.name === p.name || C.haversine(e, p) < 15))).filter(Boolean);
+      save(); renderAll(); fitTo(target);
+      askDayFor(target, !r.added.length);
+      return r;
+    }
     save(); renderAll();
     if (!opts || !opts.silent) {
       if (r.added.length) toast('已加入 ' + r.added.length + ' 個地點' + (r.dup.length ? '（' + r.dup.length + ' 個重複略過）' : ''));
@@ -1494,6 +1502,32 @@
     }
     if (r.added.length && (!opts || opts.fit !== false)) fitTo(r.added.length === 1 ? r.added : t.places);
     return r;
+  }
+
+  /** 一鍵加入之後：問要排進哪一天 */
+  function askDayFor(list, existed) {
+    const t = trip();
+    const nm = list.length === 1 ? '「' + esc(list[0].name) + '」' : list.length + ' 個地點';
+    const acts = {
+      later: () => { closeModal(); switchTab('plan'); toast('先放在「未排入」，之後可用「調整順序」排進某天'); doneHint(); },
+    };
+    range(t.days).forEach((d) => {
+      acts['d' + d] = () => {
+        snapshot();
+        let n = C.dayStops(t, d).filter((p) => !list.includes(p)).length;
+        list.forEach((p) => { p.day = d; p.order = n++; p.locked = true; });
+        for (let k = 1; k <= t.days; k++) C.dayStops(t, k).forEach((s2, i) => { s2.order = i; });
+        closeModal(); S.ui.dayFilter = d; save(); switchTab('plan'); renderMap(true);
+        toast('已加到第 ' + d + ' 天最後', 5000, undoAct); doneHint();
+      };
+    });
+    openModal('<h3>' + nm + (existed ? '已經在清單裡' : '已加入') + '</h3><p class="muted small">要排進哪一天？會放在那天最後，之後可拖曳調整。</p>' +
+      '<div class="daygrid">' + range(t.days).map((d) => '<button class="btn" data-mact="d' + d + '" style="--c:' + dc(d) + '"><b>第 ' + d + ' 天</b>' + (t.startDate ? '<small>' + dayDateShort(t, d) + '</small>' : '') + '<small>' + C.dayStops(t, d).length + ' 站</small></button>').join('') + '</div>' +
+      '<div class="row gap end"><button class="btn ghost" data-mact="later">先不排</button></div>', acts);
+  }
+  /** 從書籤按鈕開的分頁：加完可以直接關掉回 Google 地圖 */
+  function doneHint() {
+    if (window.opener && !isMobile()) setTimeout(() => toast('完成。其他開著的旅遊地圖分頁也會自動更新', 8000, { label: '關閉這個分頁', fn: () => window.close() }), 5200);
   }
 
   /** 讀剪貼簿（要在點擊裡呼叫，iPhone 會跳「貼上」確認） */
@@ -1504,6 +1538,7 @@
     if (S.ui.tab !== 'add') switchTab('add');
     const ai = $('#addInput'); if (!ai) return;
     ai.value = txt.trim().slice(0, 4000);
+    if (!S.ui.addDay) S.ui.extAdd = true;
     handleAddInput();
   }
   async function handleAddInput() {
@@ -2206,6 +2241,21 @@
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (!$('#modal').hidden) closeModal(); else if (S.ui.pick) setPick(null); } });
     // 拖放匯入
     document.addEventListener('dragover', (e) => { e.preventDefault(); });
+    // 另一個分頁（例如書籤按鈕開的）改了資料 → 這個分頁跟著更新，避免舊分頁之後存檔把它蓋掉
+    window.addEventListener('storage', (e) => {
+      if (e.key !== STORE_KEY || !e.newValue) return;
+      let inc; try { inc = JSON.parse(e.newValue); } catch (x) { return; }
+      if (!inc || !Array.isArray(inc.trips)) return;
+      // 每趟旅程各自比 updatedAt，新的贏；只在這個分頁有的旅程保留
+      let changed = false;
+      for (const raw of inc.trips) {
+        let it; try { it = C.sanitizeTrip(raw); it.synced = !!raw.synced; } catch (x) { continue; }
+        const i = S.data.trips.findIndex((x) => x.id === it.id);
+        if (i < 0) { S.data.trips.push(it); changed = true; }
+        else if ((it.updatedAt || 0) > (S.data.trips[i].updatedAt || 0)) { S.data.trips[i] = it; changed = true; }
+      }
+      if (changed) { renderTripSelect(); renderAll(); }
+    });
     let hiddenAt = 0;
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
@@ -2352,8 +2402,13 @@
       } catch (e) { history.replaceState(null, '', baseUrl()); modalMsg('分享連結壞掉了', '可能被通訊軟體截斷。請對方改傳備份檔。'); }
     } else if (params.get('add') || params.get('text') || params.get('url')) {
       // 外部一鍵加入：iOS 捷徑、書籤按鈕、Android 分享都會帶 ?add=（或 text/url）
-      const txt = [params.get('add'), params.get('text'), params.get('url')].filter(Boolean).join('\n').slice(0, 4000);
+      // Android 分享常是「店名\nhttps://maps.app.goo.gl/…」放在 text；title 也可能是店名
+      const parts = [params.get('add'), params.get('text'), params.get('url')].filter(Boolean);
+      const ttl = params.get('title');
+      if (ttl && !parts.join(' ').includes(ttl) && parts.some((x) => /https?:\/\//.test(x)) && !parts.some((x) => /\S+\s*\n\s*https?:/.test(x))) parts.unshift(ttl);
+      const txt = parts.join('\n').slice(0, 4000);
       history.replaceState(null, '', baseUrl());
+      S.ui.extAdd = true;
       switchTab('add');
       setTimeout(() => { const ai = $('#addInput'); if (ai) { ai.value = txt; handleAddInput(); } }, 50);
     } else if (params.get('join')) {
