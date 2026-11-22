@@ -165,3 +165,13 @@ python3 tests/e2e.py               # 84 項端對端測試（模擬外部服務�
 - 「觀光繪地圖」「機械紀錄」兩個主題使用向量底圖（MapLibre GL 4.7.1 + OpenFreeMap，資料 © OpenStreetMap、OpenMapTiles），其餘主題用一般圖磚。
 - 只有選這兩個主題時才下載 MapLibre（約 280 KB 壓縮後），之後由快取提供。
 - 設定 →「地圖樣式」選了固定圖磚（OpenStreetMap／CARTO）時，會優先用你選的圖磚。
+
+
+## 匯入機票
+- 「新增」分頁 →「匯入機票」：選電子機票 PDF 或登機證截圖；或按「貼上」貼確認信文字。
+- 讀取方式（全部在手機上處理，不上傳、不用 AI）：
+  1. 登機證條碼（IATA BCBP 國際標準）
+  2. 電子機票收據的訂位系統範本（目前：Amadeus）
+  3. 通用規則
+- 讀不到時：改用貼上文字，或把檔案傳給 Claude。
+- 第三方元件：pdf.js（Apache-2.0）、ZXing（Apache-2.0）、OurAirports 機場資料（Public Domain）。只在匯入機票時才下載。

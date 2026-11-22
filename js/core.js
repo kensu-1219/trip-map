@@ -555,6 +555,32 @@
     };
     return out.title || out.code || out.from ? out : null;
   }
+  /** 機票航段（去程 out、回程 ret）：起降機場代碼／名稱／座標／航廈、日期時間 */
+  function sanitizeFlights(f) {
+    if (!f || typeof f !== 'object') return null;
+    const ap = (a) => (a && /^[A-Z]{3}$/.test(a.code || '') && Number.isFinite(+a.lat) && Number.isFinite(+a.lng)
+      ? { code: a.code, name: String(a.name || a.code).slice(0, 60), lat: +a.lat, lng: +a.lng, terminal: String(a.terminal || '').slice(0, 4).toUpperCase() } : null);
+    const seg = (x) => {
+      if (!x || !/^[A-Z0-9]{2}\d{1,4}[A-Z]?$/.test(x.flight || '')) return null;
+      const from = ap(x.from), to = ap(x.to);
+      if (!from || !to) return null;
+      return {
+        flight: x.flight, from, to,
+        depDate: isDate(x.depDate) ? x.depDate : '', depTime: isTime(x.depTime) ? x.depTime : '',
+        arrDate: isDate(x.arrDate) ? x.arrDate : '', arrTime: isTime(x.arrTime) ? x.arrTime : '',
+        seat: String(x.seat || '').slice(0, 5), durationMin: Math.max(0, Math.min(2000, parseInt(x.durationMin, 10) || 0)),
+      };
+    };
+    const out = (Array.isArray(f.out) ? f.out : []).map(seg).filter(Boolean).slice(0, 6);
+    const ret = (Array.isArray(f.ret) ? f.ret : []).map(seg).filter(Boolean).slice(0, 6);
+    if (!out.length && !ret.length) return null;
+    return { out, ret, pnr: String(f.pnr || '').slice(0, 8) };
+  }
+  /** 幾點要出門：起飛 − 報到提前 − 交通（分鐘）；回傳 HH:MM 用的分鐘數 */
+  function leaveHomeMin(depHHMM, checkinMin, travelSec) {
+    return toMin(depHHMM) - (checkinMin || 150) - Math.round((travelSec || 0) / 60);
+  }
+
   /** 某天要顯示的預訂：當天開始的，以及住宿的退房日 */
   function bookingsOn(trip, iso) {
     if (!iso) return [];
@@ -668,6 +694,7 @@
     out.checklist = (Array.isArray(t.checklist) ? t.checklist : []).filter((c) => c && typeof c.t === 'string').slice(0, 300)
       .map((c) => ({ t: c.t.slice(0, 200), done: !!c.done, g: String(c.g || '').slice(0, 30) }));
     out.bookings = (Array.isArray(t.bookings) ? t.bookings : []).map(sanitizeBooking).filter(Boolean).slice(0, 300);
+    out.flights = sanitizeFlights(t.flights);
     const mem = (Array.isArray(t.members) ? t.members : []).map((m) => String(m || '').trim().slice(0, 20)).filter(Boolean);
     out.members = [...new Set(mem)].slice(0, 20);
     if (!out.members.length) out.members = ['我'];
@@ -1308,6 +1335,7 @@
       dp: t.depart ? [t.depart.name, +t.depart.lat.toFixed(6), +t.depart.lng.toFixed(6), t.departTime || 0] : undefined,
       th: t.theme && t.theme !== 'auto' ? t.theme : undefined, cu: t.currency || undefined,
       cl: t.checklist && t.checklist.length ? t.checklist.map((c) => [c.t, c.done ? 1 : 0, c.g || 0]) : undefined,
+      fl: t.flights || undefined,
       bk: t.bookings && t.bookings.length ? t.bookings.map((b) => { const o = {}; for (const [k, v] of Object.entries(b)) if (v && k !== 'id') o[k] = v; return o; }) : undefined,
       mb: t.members && (t.members.length > 1 || t.members[0] !== '我') ? t.members : undefined,
       ex: t.expenses && t.expenses.length ? t.expenses.map((e) => [e.title, e.amount, e.payer, e.split.length === t.members.length ? 0 : e.split, e.date || 0]) : undefined,
@@ -1334,6 +1362,7 @@
     t.expenses = (o.ex || []).map((e) => ({ title: e[0], amount: e[1], payer: e[2], split: e[3] || t.members.slice(), date: e[4] || '' }));
     if (o.b) t.base = { name: o.b[0], lat: o.b[1], lng: o.b[2] };
     if (o.ar) { t.arrive = { name: o.ar[0], lat: o.ar[1], lng: o.ar[2] }; t.arriveTime = o.ar[3] || ''; }
+    if (o.fl) t.flights = o.fl;
     if (o.dp) { t.depart = { name: o.dp[0], lat: o.dp[1], lng: o.dp[2] }; t.departTime = o.dp[3] || ''; }
     if (o.db) t.dayBase = Object.fromEntries(Object.entries(o.db).map(([d, v]) => [d, { name: v[0], lat: v[1], lng: v[2] }]));
     const idMap = [];
@@ -1360,6 +1389,6 @@
     cleanKey, parseGeoJSON, parseTakeoutCSV, parseKML, newTrip, sanitizeTrip, sanitizePlace, mergePlaces,
     MODES, estimateLeg, suggestMode, gmapsDirUrl, gmapsPlaceUrl, gmapsDayUrl, appleDirUrl, applePlaceUrl, timeline, hm, toMin, centroid, balancedClusters,
     orderStops, planDays, pathLen, dayStops, legKey, parseOsrm, decodePolyline, parseGoogleRoute,
-    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, CAT_COLOR, BOOK_TYPES, sanitizeBooking, bookingsOn, sanitizeExpense, settle, parseItineraryText, cleanPlaceName, wikiPick, wikiLangs, PHOTO_GEO_CATS, sanitizePhoto, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel, clearDay, removeDay, parseNoteTags, applyNoteTags, placeMeals, dayStartTime, departDeadline, CLEAR_MIN, CHECKIN_MIN,
+    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, CAT_COLOR, BOOK_TYPES, sanitizeBooking, bookingsOn, sanitizeExpense, settle, parseItineraryText, cleanPlaceName, wikiPick, wikiLangs, PHOTO_GEO_CATS, sanitizePhoto, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel, sanitizeFlights, leaveHomeMin, clearDay, removeDay, parseNoteTags, applyNoteTags, placeMeals, dayStartTime, departDeadline, CLEAR_MIN, CHECKIN_MIN,
   };
 });

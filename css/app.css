@@ -690,3 +690,14 @@ html[data-theme="illust"] .setup-sum { border: 0; border-radius: 16px; box-shado
 html[data-theme="nier"] .setup-sum { position: relative; border-color: var(--hair); background-image: var(--grain); }
 html[data-theme="nier"] .setup-sum::before { content: ""; position: absolute; inset: -4px; pointer-events: none; background: var(--corners); background-repeat: no-repeat; }
 @media (max-width: 420px) { .setup-btns .btn .ic + * { display: none; } }
+
+/* 機票：出門、報到、航班列 */
+.flight-block { margin: 2px 0 6px; padding: 2px 0; border-top: 1px dashed var(--hair); border-bottom: 1px dashed var(--hair); }
+.stop.flight .grow { line-height: 1.4; }
+.stop.flight b { letter-spacing: .04em; }
+.tk-seg { padding: 8px 10px; margin: 6px 0; border: 1px solid var(--hair); border-radius: var(--r); background: var(--card); line-height: 1.5; }
+.tk-seg.warn { border-color: var(--danger); }
+.tk-seg .warn { color: var(--danger); }
+.tk-lab { display: inline-block; font-size: 11px; padding: 0 6px; margin-right: 6px; border-radius: 4px; background: var(--soft); color: var(--ink-soft); }
+html[data-theme="nier"] .tk-lab { border-radius: 0; background: var(--ink); color: var(--paper); letter-spacing: .1em; }
+html[data-theme="illust"] .tk-seg { border: 0; border-radius: 14px; box-shadow: inset 0 0 0 1.5px var(--line); }

@@ -1,9 +1,9 @@
 /* Service worker：程式離線可開、看過的地圖圖磚離線可看 */
-const VERSION = 'v1.14.2';
+const VERSION = 'v1.15.0';
 const SHELL = 'shell-' + VERSION;
 const TILES = 'tiles-v1';
 const MAX_TILES = 3000;
-const ASSETS = ['./', 'index.html', 'css/app.css', 'js/icons.js', 'js/core.js', 'js/services.js', 'js/sync.js', 'js/mapstyle.js', 'js/app.js',
+const ASSETS = ['./', 'index.html', 'css/app.css', 'js/icons.js', 'js/core.js', 'js/services.js', 'js/sync.js', 'js/mapstyle.js', 'js/ticket.js', 'js/app.js',
   'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon.svg', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {

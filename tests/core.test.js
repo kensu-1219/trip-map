@@ -519,3 +519,37 @@ test('沒設住宿、只設機場：第 1 天從機場出發、最後一天結�
   const tl = C.timeline('09:00', [600, 600, 600], [60, 60], false, true);
   assert.strictEqual(tl.stops[0].arrive, 540); assert.strictEqual(tl.end, 540 + 60 + 10 + 60 + 10);
 });
+
+const TT = require('../js/ticket.js');
+TT.loadAirports(JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '../data/airports.json'), 'utf8')));
+test('機票：Amadeus 電子機票收據（假資料）讀出兩段航班', () => {
+  const txt = require('fs').readFileSync(require('path').join(__dirname, 'fixtures/amadeus_sample.txt'), 'utf8');
+  const r = TT.parseTicketText(txt, { producer: 'Amadeus' });
+  assert.strictEqual(r.system, 'amadeus'); assert.strictEqual(r.pnr, 'TST9QZ');
+  assert.strictEqual(r.segments.length, 2, JSON.stringify(r.segments));
+  const [a, b] = r.segments;
+  assert.deepStrictEqual([a.flight, a.from, a.to, a.depDate, a.depTime, a.arrTime, a.fromTerminal, a.seat], ['CI100', 'TPE', 'NRT', '2027-03-01', '08:10', '12:25', '2', '41C']);
+  assert.deepStrictEqual([b.flight, b.from, b.to, b.depDate, b.depTime], ['CI101', 'NRT', 'TPE', '2027-03-06', '13:40']);
+  const j = TT.splitJourney(r.segments);
+  assert.deepStrictEqual([j.out.length, j.ret.length], [1, 1]);
+});
+test('機票：機場名稱比對、兩個機場黏在一起也能切開', () => {
+  assert.strictEqual(TT.matchAirport('SAPPORO NEW CHITOSE').airport.code, 'CTS');
+  assert.strictEqual(TT.matchAirport('TAIPEI TAIWAN TAOYUAN INTL').airport.code, 'TPE');
+  const sp = TT.splitTwoAirports('TAIPEI TAIWAN TAOYUAN INTL SAPPORO NEW CHITOSE');
+  assert.deepStrictEqual([sp.from.code, sp.to.code], ['TPE', 'CTS']);
+  assert.strictEqual(TT.terminalName('I'), '國際線航廈'); assert.strictEqual(TT.termShort('1'), 'T1');
+});
+test('機票：登機證條碼 BCBP、貼上的確認信文字', () => {
+  const s = 'M1' + 'TEST/PASSENGER MS'.padEnd(20) + 'E' + 'TST9QZ'.padEnd(7) + 'TPE' + 'NRT' + 'CI ' + '0100 ' + '060' + 'Y' + '041C' + '0012 ' + '1' + '00';
+  const b = TT.parseBCBP(s, '2026-11-22');
+  assert.deepStrictEqual([b.pnr, b.segments[0].flight, b.segments[0].from, b.segments[0].to, b.segments[0].depDate, b.segments[0].seat], ['TST9QZ', 'CI100', 'TPE', 'NRT', '2027-03-01', '41C']);
+  assert.strictEqual(TT.parseBCBP('hello'), null);
+  const g = TT.parseTicketText('訂位代號：ABC123\n\nCI 130  TPE 2027/05/01 08:00 → NRT 2027/05/01 12:20\nSeat: 33A\n\nCI 131 NRT 2027/05/06 13:30 → TPE 2027/05/06 16:20\nSeat: 33B\n');
+  assert.deepStrictEqual(g.segments.map((x) => x.flight + x.from + x.to + x.depTime), ['CI130TPENRT08:00', 'CI131NRTTPE13:30']);
+});
+test('出門時間：起飛 − 報到 − 交通', () => {
+  assert.strictEqual(C.leaveHomeMin('10:05', 150, 3600), 10 * 60 + 5 - 150 - 60);
+  const f = C.sanitizeFlights({ out: [{ flight: 'JX850', from: { code: 'TPE', lat: 25, lng: 121, terminal: '1' }, to: { code: 'CTS', lat: 42.7, lng: 141.6, terminal: 'I' }, depDate: '2027-04-04', depTime: '10:05' }], ret: [{ flight: 'bad' }] });
+  assert.strictEqual(f.out.length, 1); assert.strictEqual(f.ret.length, 0); assert.strictEqual(f.out[0].from.terminal, '1');
+});

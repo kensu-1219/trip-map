@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.14.2';
+  const VERSION = '1.15.0';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -48,7 +48,11 @@
   const hotels = (t) => { const out = t.base ? [t.base] : []; Object.values(t.dayBase || {}).forEach((h) => { if (h && !out.some((x) => x.name === h.name && C.haversine(x, h) < 50)) out.push(h); }); return out; };
   const airports = (t) => [t.arrive, t.depart].filter((a, i, arr) => a && !(i === 1 && arr[0] && arr[0].name === a.name && C.haversine(arr[0], a) < 200));
   const allPoints = (t) => hotels(t).concat(airports(t), t.places);
-  const findPoint = (t, id) => (id === 'base' ? t.base : id === 'arrive' ? t.arrive : id === 'depart' ? t.depart : /^base-\d+$/.test(id || '') ? (t.dayBase || {})[id.slice(5)] : id === 'me' ? S.ui.me : t.places.find((p) => p.id === id));
+  const flightApt = (t, code) => { const f = t.flights; if (!f) return null; for (const sg of f.out.concat(f.ret)) for (const a of [sg.from, sg.to]) if (a.code === code) return aptPoint(a); return null; };
+  const aptPoint = (a) => ({ id: 'fl-' + a.code, name: aptName(a), lat: a.lat, lng: a.lng, cat: 'airport' });
+  const aptName = (a) => (window.TripTicket && window.TripTicket.ZH[a.code] ? window.TripTicket.ZH[a.code] + '機場' : a.name);
+  const homePoint = () => { const h = settings().home; return h && Number.isFinite(h.lat) ? { id: 'home', name: h.name || '家', lat: h.lat, lng: h.lng } : null; };
+  const findPoint = (t, id) => (id === 'home' ? homePoint() : /^fl-[A-Z]{3}$/.test(id || '') ? flightApt(t, id.slice(3)) : id === 'base' ? t.base : id === 'arrive' ? t.arrive : id === 'depart' ? t.depart : /^base-\d+$/.test(id || '') ? (t.dayBase || {})[id.slice(5)] : id === 'me' ? S.ui.me : t.places.find((p) => p.id === id));
 
   /* ================= 地圖 ================= */
   let map, markerLayer, routeLayer, tileLayer, meLayer, nearbyLayer;
@@ -457,9 +461,10 @@
       '</div>' + installBanner() +
       '<div class="row gap base-row">' + I('hotel') + ' <span class="grow">' + (t.base ? '<b>' + esc(t.base.name) + '</b> <span class="muted">' + (C.multiHotel(t) ? '預設住宿（部分天數另有設定）' : '每天從這裡出發、回來') + '</span>' : (C.multiHotel(t) ? '<span class="muted">各晚住宿已分別設定（每天最後一列的「今晚」可改）；這裡可再設一個預設住宿</span>' : '<span class="muted">未設定住宿（設定後每天會從住宿出發）</span>')) + '</span><button class="btn sm" data-act="setBase">' + (t.base ? '更換' : '設定') + '</button></div>' +
       airportRow(t, 'arrive') + airportRow(t, 'depart') +
+      '<div class="row gap"><button class="btn sm grow" data-act="ticket">' + catIc('airport') + ' 用機票自動填（PDF／登機證）</button><button class="btn sm" data-act="setHome">' + I('house') + (settings().home ? ' 住家：' + esc(settings().home.name.slice(0, 10)) : ' 設定住家') + '</button></div>' +
       '<div class="row gap"><button class="btn primary grow" data-act="autoplan"' + (t.places.length ? '' : ' disabled') + '>' + I('auto') + ' 自動排行程 <span style="opacity:.7;font-weight:400">· 依遠近分 ' + t.days + ' 天</span></button>' +
       (t.prevPlan ? '<button class="btn" data-act="restorePlan" title="回到按「自動排行程」之前的分天與順序">' + I('undo') + ' 復原排程</button>' : '') + '</div>';
-    if (!t.places.length) return h + welcomeHtml();
+    if (!t.places.length && !t.flights) return h + welcomeHtml();
     return renderPlanBody(t, f, h);
   }
   /** 行程設定要不要展開：設定好、排過行程後預設收起，可自己切換（每趟旅程記住） */
@@ -513,7 +518,9 @@
       '<span class="muted">' + stops.length + ' 站' + (stops.length ? ' · ' + C.hm(C.toMin(st)) + '–' + C.hm(tl.end) + ' · 移動 ' + (est ? '約 ' : '') + C.fmtDur(move) + ' · ' + C.fmtDist(dist) + ' · 停留 ' + C.fmtDur(stay) : '') +
       (late ? ' <b class="warn">· 趕不上飛機：' + C.hm(tl.end) + ' 才到機場，建議 ' + C.hm(C.departDeadline(t)) + ' 前到（起飛前 2 小時）</b>' : '') +
       (dayCost(stops) ? ' · 花費 ' + (t.currency ? esc(t.currency) + ' ' : '') + fmtMoney(dayCost(stops)) : '') + '</span>' + dayBookings(t, d) + '</div>';
-    if (!stops.length) return h + '<div class="empty sm">這天沒有安排</div></div>';
+    const fOut = d === 1 ? flightOutRows(t) : '', fRet = d === t.days ? flightRetRows(t) : '';
+    h += fOut;
+    if (!stops.length) return h + '<div class="empty sm">這天沒有安排</div>' + fRet + '</div>';
     let li = 0;
     const isAir = (x) => x && x.cat === 'airport' && (x === t.arrive || x === t.depart);
     if (hasS) h += baseRow(ends.start, C.hm(C.toMin(st)) + (isAir(ends.start) ? ' 出關' : ' 出發'), isAir(ends.start) ? (t.arriveTime ? t.arriveTime + ' 落地' : '抵達') : d > 1 && ends.end && ends.start !== ends.end ? '退房' : '') + legRow(t, infos[li++]);
@@ -523,8 +530,192 @@
     });
     if (hasE) h += isAir(ends.end) ? baseRow(ends.end, C.hm(tl.end) + ' 到機場', t.departTime ? t.departTime + ' 起飛' : '回程')
       : baseRow(ends.end, C.hm(tl.end) + (ends.start && ends.start !== ends.end ? ' 入住' : ' 回到住宿'), '', d);
+    return h + fRet + '</div>';
+  }
+  /* ---------- 機票：出門、報到、航班 ---------- */
+  const clock = (m) => (m < 0 ? '前一天 ' + C.hm(m + 1440) : m >= 1440 ? '隔天 ' + C.hm(m - 1440) : C.hm(m));
+  const termTxt = (a) => (window.TripTicket ? window.TripTicket.termShort(a.terminal) : a.terminal);
+  function flightRow(s) {
+    const T = window.TripTicket;
+    const nm = (a) => esc(T && T.ZH[a.code] ? T.ZH[a.code] : a.code) + (a.terminal ? ' ' + esc(termTxt(a)) : '');
+    return '<div class="stop flight"><span class="num base">' + catIc('airport') + '</span><span class="grow"><b>' + esc(s.flight) + '</b> ' +
+      esc(s.depTime || '?') + ' ' + nm(s.from) + ' → ' + esc(s.arrTime || '?') + ' ' + nm(s.to) +
+      '<br><small class="muted">' + [s.depDate ? s.depDate.slice(5).replace('-', '/') : '', s.durationMin ? '飛行 ' + C.fmtDur(s.durationMin * 60) : '', s.seat ? '座位 ' + esc(s.seat) : ''].filter(Boolean).join(' · ') + '</small></span></div>';
+  }
+  const homeRow = (label, time) => '<div class="stop base"><span class="num base">' + I('house') + '</span><span class="grow">' + esc(label) + '</span><span class="time">' + time + '</span></div>';
+  function flightOutRows(t) {
+    const f = t.flights; if (!f || !f.out.length) return '';
+    const s0 = f.out[0], ck = settings().checkin || 150, hp = homePoint(), apt = aptPoint(s0.from);
+    let h = '<div class="flight-block">';
+    if (hp && s0.depTime) {
+      const li = legInfo(t, hp, apt);
+      h += homeRow(hp.name, clock(C.leaveHomeMin(s0.depTime, ck, li.res.duration)) + ' 出門') + legRow(t, li);
+    } else if (!hp) {
+      h += '<div class="stop base"><span class="num base">' + I('house') + '</span><span class="grow muted">設定住家位置，算出幾點要出門</span><button class="btn sm" data-act="setHome">設定</button></div>';
+    }
+    if (s0.depTime) h += '<div class="stop base"><span class="num base">' + catIc('airport') + '</span><span class="grow">' + esc(apt.name) + (s0.from.terminal ? ' ' + esc(termTxt(s0.from)) : '') + ' <small class="muted">起飛前 ' + C.fmtDur(ck * 60) + '</small></span><span class="time">' + clock(C.toMin(s0.depTime) - ck) + ' 報到</span></div>';
+    h += f.out.map(flightRow).join('');
     return h + '</div>';
   }
+  function flightRetRows(t) {
+    const f = t.flights; if (!f || !f.ret.length) return '';
+    const last = f.ret[f.ret.length - 1], hp = homePoint();
+    let h = '<div class="flight-block">' + f.ret.map(flightRow).join('');
+    if (hp && last.arrTime) {
+      const li = legInfo(t, aptPoint(last.to), hp);
+      h += legRow(t, li) + homeRow(hp.name, '約 ' + clock(C.toMin(last.arrTime) + C.CLEAR_MIN + Math.round(li.res.duration / 60)) + ' 到家');
+    }
+    return h + '</div>';
+  }
+  function setHomeModal() {
+    const s = settings();
+    let found = [];
+    openModal('<h3>住家位置</h3><p class="muted">用來算出國那天幾點要出門、回國幾點到家。只存在這支手機，不會同步給旅伴。</p>' +
+      (s.home ? '<p>目前：<b>' + esc(s.home.name) + '</b></p>' : '') +
+      '<label class="lbl">搜尋地址或地標</label><div class="row gap"><input id="hQ" class="grow" placeholder="例：台北車站、新北市板橋區…"><button class="btn" data-mact="search">搜尋</button></div><div id="hRes"></div>' +
+      '<label class="lbl">國際線起飛前幾分鐘到機場報到</label><input id="hCk" type="number" min="30" max="300" step="10" value="' + (s.checkin || 150) + '">' +
+      '<div class="row gap wrap" style="margin-top:12px"><button class="btn primary" data-mact="ok">儲存</button>' + (s.home ? '<button class="btn danger" data-mact="clear">清除住家</button>' : '') + '<button class="btn" data-mact="close">取消</button></div>', {
+      search: async () => {
+        const q = $('#hQ').value.trim(); if (!q) return;
+        const box = $('#hRes'); box.innerHTML = '<div class="muted small">搜尋中…</div>';
+        try { found = await SV.geocode(q, { settings: settings(), near: { lat: 25.04, lng: 121.55 } }); } catch (e) { found = []; }
+        box.innerHTML = found.length ? found.slice(0, 6).map((r, i) => '<label class="result"><input type="radio" name="hPick" value="' + i + '"' + (i ? '' : ' checked') + '> <b>' + esc(r.name) + '</b><br><span class="muted">' + esc(r.address || '') + '</span></label>').join('') : '<div class="empty sm">找不到，換個關鍵字</div>';
+      },
+      ok: () => {
+        const r = document.querySelector('input[name=hPick]:checked');
+        if (r && found[+r.value]) { const p = found[+r.value]; s.home = { name: String(p.name).slice(0, 60), lat: +p.lat, lng: +p.lng }; }
+        const ck = parseInt($('#hCk').value, 10); s.checkin = ck >= 30 && ck <= 300 ? ck : 150;
+        if (!s.home) { toast('先搜尋並選一個位置'); return; }
+        closeModal(); save(); renderAll(true);
+      },
+      clear: () => { s.home = null; closeModal(); save(); renderAll(true); },
+    });
+    const q = $('#hQ'); if (q) q.addEventListener('keydown', (e) => { if (e.key === 'Enter') modalActs.search(); });
+  }
+
+  /* ---------- 機票匯入（不用 AI：條碼標準＋訂位系統範本） ---------- */
+  let pdfjsP = null, zxP = null, apP = null;
+  const absUrl = (p) => new URL(p, location.href).href;
+  function loadPdf() {
+    if (!pdfjsP) { pdfjsP = import(absUrl('vendor/pdfjs/pdf.min.mjs')).then((m) => { m.GlobalWorkerOptions.workerSrc = absUrl('vendor/pdfjs/pdf.worker.min.mjs'); return m; }); pdfjsP.catch(() => { pdfjsP = null; }); }
+    return pdfjsP;
+  }
+  function loadZX() {
+    if (!zxP) { zxP = (window.ZXing ? Promise.resolve() : loadJS('vendor/zxing/zxing.min.js')).then(() => window.ZXing); zxP.catch(() => { zxP = null; }); }
+    return zxP;
+  }
+  function loadAirportDB() {
+    if (!apP) { apP = fetch('data/airports.json').then((r) => r.json()).then((rows) => { window.TripTicket.loadAirports(rows); return true; }); apP.catch(() => { apP = null; }); }
+    return apP;
+  }
+  async function decodeBarcodes(canvas) {
+    const ZX = await loadZX();
+    const hints = new Map();
+    hints.set(ZX.DecodeHintType.POSSIBLE_FORMATS, [ZX.BarcodeFormat.PDF_417, ZX.BarcodeFormat.AZTEC, ZX.BarcodeFormat.QR_CODE, ZX.BarcodeFormat.DATA_MATRIX]);
+    hints.set(ZX.DecodeHintType.TRY_HARDER, true);
+    const rd = new ZX.MultiFormatReader(); rd.setHints(hints);
+    try { return [rd.decode(new ZX.BinaryBitmap(new ZX.HybridBinarizer(new ZX.HTMLCanvasElementLuminanceSource(canvas)))).getText()]; } catch (e) { return []; }
+  }
+  async function readTicketFile(file) {
+    await loadAirportDB();
+    let text = '', meta = {}, codes = [];
+    if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') {
+      const pdfjs = await loadPdf();
+      const doc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false, cMapUrl: absUrl('vendor/pdfjs/cmaps/'), cMapPacked: true }).promise;
+      try { const info = (await doc.getMetadata()).info || {}; meta = { producer: info.Producer || '', creator: info.Creator || '' }; } catch (e) { /* 沒有中繼資料 */ }
+      const pages = [];
+      for (let i = 1; i <= Math.min(doc.numPages, 8); i++) { const pg = await doc.getPage(i); pages.push(pg); text += window.TripTicket.itemsToText((await pg.getTextContent()).items) + '\n\n'; }
+      // 文字讀不到航班，或是登機證：把頁面畫出來找條碼
+      if (!window.TripTicket.parseTicketText(text, meta).segments.length || /BOARDING PASS|登機證|搭乗券/i.test(text)) {
+        for (const pg of pages.slice(0, 3)) {
+          const vp = pg.getViewport({ scale: 2 }); const cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
+          await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+          codes.push(...await decodeBarcodes(cv));
+        }
+      }
+    } else if (/^image\//.test(file.type) || /\.(png|jpe?g|heic|webp)$/i.test(file.name)) {
+      const bmp = await createImageBitmap(file);
+      const k = Math.min(1, 2400 / Math.max(bmp.width, bmp.height));
+      const cv = document.createElement('canvas'); cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
+      cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+      codes = await decodeBarcodes(cv);
+    } else text = await file.text();
+    return { text, meta, codes };
+  }
+  function parseTicketInput(inp) {
+    const T = window.TripTicket;
+    const res = inp.text ? T.parseTicketText(inp.text, inp.meta) : { segments: [], pnr: '', system: '' };
+    for (const c of inp.codes || []) {
+      const b = T.parseBCBP(c); if (!b) continue;
+      for (const sg of b.segments) { const m = res.segments.find((x) => x.flight === sg.flight); if (m) m.seat = m.seat || sg.seat; else res.segments.push(sg); }
+      res.pnr = res.pnr || b.pnr; res.system = res.system || 'bcbp';
+    }
+    return res;
+  }
+  async function importTicket(file) {
+    toast('讀取機票中…', 8000);
+    let res;
+    try { res = parseTicketInput(await readTicketFile(file)); } catch (e) { $('#toast').hidden = true; modalMsg('讀不到這個檔案', esc(String(e && e.message || e)).slice(0, 200) + '<br>可以改用貼上確認信文字，或把檔案傳給 Claude。'); return; }
+    $('#toast').hidden = true;
+    showTicketConfirm(res);
+  }
+  function ticketPasteModal() {
+    openModal('<h3>貼上機票或確認信內容</h3><p class="muted">從航空公司確認信複製整段文字貼進來（要有航班號、日期、時間）。</p><textarea id="tkTxt" rows="8" placeholder="例：CI 130 TPE 2027/05/01 08:00 → NRT 12:20"></textarea>' +
+      '<div class="row gap end"><button class="btn primary" data-mact="ok">讀取</button><button class="btn" data-mact="close">取消</button></div>', {
+      ok: async () => { const txt = $('#tkTxt').value; closeModal(); await loadAirportDB(); showTicketConfirm(parseTicketInput({ text: txt, codes: [] })); },
+    });
+  }
+  function segToStore(sg) {
+    const T = window.TripTicket;
+    const ap = (code, term) => { const a = T.airportByCode(code); return a ? { code, name: a.name, lat: a.lat, lng: a.lng, terminal: term || '' } : null; };
+    return { flight: sg.flight, from: ap(sg.from, sg.fromTerminal), to: ap(sg.to, sg.toTerminal), depDate: sg.depDate, depTime: sg.depTime, arrDate: sg.arrDate, arrTime: sg.arrTime, seat: sg.seat, durationMin: sg.durationMin };
+  }
+  function showTicketConfirm(res) {
+    const T = window.TripTicket, t = trip();
+    if (!res.segments.length) { modalMsg('沒有讀到航班', '這份檔案裡找不到航班號、時間或登機證條碼。<br>可以：① 改用「貼上確認信文字」 ② 把檔案傳給 Claude 幫你看 ③ 在「清單 → 預訂」手動新增。'); return; }
+    const j = T.splitJourney(res.segments);
+    const zh = (c) => (T.ZH[c] || c);
+    const bad = (sg) => !sg.from || !sg.to || !sg.depDate || !sg.depTime || !sg.arrTime;
+    const row = (sg, lab) => '<div class="tk-seg' + (bad(sg) ? ' warn' : '') + '"><span class="tk-lab">' + lab + '</span><b>' + esc(sg.flight) + '</b> ' + esc(sg.depDate ? sg.depDate.slice(5).replace('-', '/') : '日期？') +
+      '<br>' + esc(sg.depTime || '？') + ' ' + esc(zh(sg.from) || '？') + (sg.fromTerminal ? ' ' + esc(T.termShort(sg.fromTerminal)) : '') + ' → ' + esc(sg.arrTime || '？') + ' ' + esc(zh(sg.to) || '？') + (sg.toTerminal ? ' ' + esc(T.termShort(sg.toTerminal)) : '') +
+      (sg.seat ? ' · 座位 ' + esc(sg.seat) : '') + (sg.termGuess ? ' <small class="muted">（航廈依航空公司推定）</small>' : '') + (bad(sg) ? '<br><small class="warn">有欄位沒讀到，匯入後請到預訂裡補</small>' : '') + '</div>';
+    const start = j.out[0] && j.out[0].depDate, endD = j.ret.length ? j.ret[0].depDate : '';
+    const nd = start && endD ? T.daysBetween(start, endD) + 1 : 0;
+    const sysName = { amadeus: 'Amadeus 範本', sabre: 'Sabre 範本', navitaire: 'Navitaire 範本', bcbp: '登機證條碼', generic: '通用規則' }[res.system] || '通用規則';
+    openModal('<h3>' + catIc('airport') + ' 讀到 ' + res.segments.length + ' 段航班</h3><p class="muted small">辨識方式：' + sysName + (res.pnr ? ' · 訂位代號 ' + esc(res.pnr) : '') + '</p>' +
+      j.out.map((sg, i) => row(sg, j.ret.length ? (j.out.length > 1 ? '去程 ' + (i + 1) : '去程') : '航段')).join('') + j.ret.map((sg, i) => row(sg, j.ret.length > 1 ? '回程 ' + (i + 1) : '回程')).join('') +
+      '<label class="check"><input type="checkbox" id="tkAir" checked> 第 1 天從 ' + esc(zh(j.out.length ? j.out[j.out.length - 1].to : '')) + ' 出發' + (j.ret.length ? '、最後一天到 ' + esc(zh(j.ret[0].from)) + ' 搭機' : '') + '，並排出國前「幾點出門、報到」</label>' +
+      '<label class="check"><input type="checkbox" id="tkBook" checked> 加到「預訂」</label>' +
+      (start ? '<label class="check"><input type="checkbox" id="tkDate"' + (t.startDate !== start || (nd && t.days !== nd) ? ' checked' : '') + '> 出發日設為 ' + esc(start.slice(5).replace('-', '/')) + (nd ? '、共 ' + nd + ' 天' : '') + (t.startDate && t.startDate !== start ? '（目前 ' + esc(t.startDate) + '）' : '') + '</label>' : '') +
+      '<div class="row gap end"><button class="btn primary" data-mact="ok">匯入</button><button class="btn" data-mact="close">取消</button></div>', {
+      ok: () => {
+        snapshot();
+        const ok = (x) => x && x.from && x.to;
+        const out = j.out.map(segToStore).filter(ok), ret = j.ret.map(segToStore).filter(ok);
+        if ($('#tkAir').checked && (out.length || ret.length)) {
+          t.flights = C.sanitizeFlights({ out, ret, pnr: res.pnr });
+          if (out.length) { const a = out[out.length - 1]; setAirport(t, 'arrive', { name: aptName(a.to), lat: a.to.lat, lng: a.to.lng }); t.arriveTime = a.arrTime || ''; }
+          if (ret.length) { const a = ret[0]; setAirport(t, 'depart', { name: aptName(a.from), lat: a.from.lat, lng: a.from.lng }); t.departTime = a.depTime || ''; }
+        }
+        if ($('#tkBook').checked) {
+          t.bookings = t.bookings || [];
+          for (const sg of out.concat(ret)) {
+            const b = C.sanitizeBooking({
+              type: 'flight', title: sg.flight + ' ' + zh(sg.from.code) + ' → ' + zh(sg.to.code), date: sg.depDate, time: sg.depTime, endDate: sg.arrDate, endTime: sg.arrTime,
+              from: sg.from.code + (sg.from.terminal ? ' ' + T.termShort(sg.from.terminal) : ''), to: sg.to.code + (sg.to.terminal ? ' ' + T.termShort(sg.to.terminal) : ''),
+              code: res.pnr, note: [sg.seat ? '座位 ' + sg.seat : '', sg.durationMin ? '飛行 ' + C.fmtDur(sg.durationMin * 60) : ''].filter(Boolean).join(' · '),
+            });
+            const i = t.bookings.findIndex((x) => x.type === 'flight' && x.title.split(' ')[0] === sg.flight && x.date === sg.depDate);
+            if (b) { if (i >= 0) { b.id = t.bookings[i].id; b.cost = t.bookings[i].cost; t.bookings[i] = b; } else t.bookings.push(b); }
+          }
+        }
+        if ($('#tkDate') && $('#tkDate').checked && start) { t.startDate = start; if (nd) t.days = Math.max(1, Math.min(60, nd)); }
+        closeModal(); save(); S.ui.tab = 'plan'; renderAll();
+        toast('已匯入 ' + (out.length + ret.length) + ' 段航班' + (homePoint() ? '' : '；設定住家就能算幾點出門'), 6000, undoAct);
+      },
+    });
+  }
+
   const dayCost = (stops) => stops.reduce((a, p) => a + (p.cost || 0), 0);
   function mostCommonMode(infos) {
     const c = {}; infos.forEach((i) => { c[i.mode] = (c[i.mode] || 0) + 1; });
@@ -665,7 +856,10 @@
       h += '<div class="msg">' + I('search') + ' 正在查詢沒有座標的地點：' + geo.done + ' / ' + geo.total + (geo.failed.length ? '，找不到 ' + geo.failed.length + ' 個' : '') + (geo.done < geo.total ? '（每秒約 1 個）' : ' — 完成') + '</div>';
       if (geo.done >= geo.total && geo.failed.length) h += '<div class="msg warn">找不到座標：' + geo.failed.map(esc).join('、') + '<br>可以在上方用地名＋城市重新搜尋。</div>';
     }
-    h += '<hr>' + sec('// Import · 匯入') +
+    h += '<hr>' + sec('// Flights · 機票') +
+      '<div class="row gap"><button class="btn primary grow" data-act="ticket">' + catIc('airport') + ' 匯入機票（電子機票 PDF／登機證截圖）</button><button class="btn" data-act="ticketPaste" title="貼上確認信文字">' + I('text') + ' 貼上</button></div>' +
+      '<div class="muted small">不用 AI：讀登機證條碼（國際標準），或電子機票收據的固定範本。讀到後會設定機場、出發日，並排出國那天幾點出門。</div>' +
+      '<hr>' + sec('// Import · 匯入') +
       '<button class="btn block" data-act="import">' + I('folder') + ' 選擇檔案（Google 已儲存清單 .csv／已加星號 .json／My Maps .kml／本工具備份 .json）</button>' +
       '<details><summary>怎麼把 Google Maps 存的地點整批匯出？</summary><ol class="help">' +
       '<li>電腦開 <a href="https://takeout.google.com/" target="_blank" rel="noopener">takeout.google.com</a>，先按「取消全選」。</li>' +
@@ -1896,6 +2090,7 @@
     $('#btnFit').addEventListener('click', () => fitTo(allPoints(trip())));
     $('#btnLocate').addEventListener('click', locate);
     $('#fileInput').addEventListener('change', (e) => { const fs = Array.from(e.target.files || []); e.target.value = ''; importFiles(fs); });
+    $('#ticketInput').addEventListener('change', (e) => { const f = (e.target.files || [])[0]; e.target.value = ''; if (f) importTicket(f); });
     $('#modal').addEventListener('click', (e) => {
       if (e.target.id === 'modal') { closeModal(); return; }
       const co = e.target.closest('.catopt');
@@ -1922,6 +2117,9 @@
         case 'filter': S.ui.dayFilter = +el.dataset.d; renderPanel(true); renderMap(true); break;
         case 'autoplan': autoplan(); break;
         case 'restorePlan': restorePlan(); break;
+        case 'setHome': setHomeModal(); break;
+        case 'ticket': $('#ticketInput').click(); break;
+        case 'ticketPaste': ticketPasteModal(); break;
         case 'setupToggle': { const t = trip(); try { localStorage.setItem('tripmap.setup.' + t.id, planSetupOpen(t) ? '0' : '1'); } catch (e) { /* 私密模式 */ } renderAll(true); break; }
         case 'setBase': setBaseModal(0); break;
         case 'setAirport': setAirportModal(el.dataset.k); break;

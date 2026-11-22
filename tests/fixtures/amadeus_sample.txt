@@ -1,0 +1,46 @@
+Passenger: Test Passenger Ms (ADT)                                                 Issuing office:
+Booking ref: TST9QZ                                                                CHINA AIRLINES, OFFICIAL WEBSITE
+Ticket number: 297 1234567890
+                                                                                   Date: 05Jan2027
+
+
+
+_
+ELECTRONIC TICKET RECEIPT
+
+
+From                            To                            Flight   Departure       Arrival         Last check-in
+TAIPEI TAIWAN TAOYUAN INTL      TOKYO NARITA                  CI100    08:10           12:25
+Terminal: 2                     Terminal: 2                            01Mar2027       01Mar2027
+
+Class: Y                        Operated by: CHINA AIRLINES
+Seat: 41C                       Marketed by: CHINA AIRLINES                                          NVB (2): 01Mar2027
+Baggage (4): 1PC                Booking status (1): OK                                               NVA (3): 01Mar2027
+Fare basis: YLOW                                                                                     Duration: 03:15
+
+
+
+
+_
+
+TOKYO NARITA                    TAIPEI TAIWAN TAOYUAN         CI101    13:40           16:35
+Terminal: 2                     INTL                                   06Mar2027       06Mar2027
+                                Terminal: 2
+
+Class: Y                        Operated by: CHINA AIRLINES
+Seat: 40A                                                                                            NVB (2): 06Mar2027
+Baggage (4): 1PC                                                                                     NVA (3): 06Mar2027
+Fare basis: YLOW                                                                                     Duration: 03:55
+
+
+
+
+_
+ELECTRONIC TICKET REMARKS
+
+
+
+
+ELECTRONIC MISCELLANEOUS DOCUMENT RECEIPT (EMD)
+From: TAIPEI TAIWAN TAOYUAN INTL To: TOKYO NARITA Flight: CI100
+
