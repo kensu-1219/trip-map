@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.14.1';
+  const VERSION = '1.14.2';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -377,7 +377,8 @@
   function dayLegs(t, d) {
     const stops = C.dayStops(t, d);
     const e = C.dayEnds(t, d);
-    const seq = e.start && e.end && stops.length ? [e.start].concat(stops, [e.end]) : stops;
+    // 只有一端（例如只設了機場、沒設住宿）也要把那一端接上
+    const seq = stops.length ? (e.start ? [e.start] : []).concat(stops, e.end ? [e.end] : []) : stops;
     const out = [];
     for (let i = 0; i < seq.length - 1; i++) out.push([seq[i], seq[i + 1]]);
     return out;
@@ -434,7 +435,22 @@
   function renderPlan() {
     const t = trip();
     const f = S.ui.dayFilter;
-    let h = sec('// Itinerary · 行程設定') + '<div class="row wrap gap">' +
+    const setOpen = planSetupOpen(t);
+    if (!setOpen) {
+      const bits = [t.days + ' 天'];
+      if (t.startDate) bits.push(t.startDate.slice(5).replace('-', '/') + ' 出發');
+      bits.push((t.dayStart || '09:00') + ' 出門');
+      const hs = [t.base].concat(Object.values(t.dayBase || {})).filter(Boolean).map((b) => b.name).filter((v, i, a) => a.indexOf(v) === i);
+      const sum = '<div class="setup-sum" data-act="setupToggle" role="button" tabindex="0" title="展開行程設定">' +
+        '<span class="grow"><b>' + bits.map(esc).join(' · ') + '</b>' +
+        '<span class="muted small">' + I('hotel') + ' ' + (hs.length ? esc(hs[0]) + (hs.length > 1 ? ' 等 ' + hs.length + ' 間' : '') : '未設定住宿') +
+        (t.arrive || t.depart ? ' · ' + catIc('airport') + ' ' + esc([t.arrive ? (t.arrive.name + (t.arriveTime ? ' ' + t.arriveTime : '')) : '', t.depart ? (t.depart.name + (t.departTime ? ' ' + t.departTime : '')) : ''].filter(Boolean).join(' → ')) : '') + '</span></span>' +
+        '<span class="setup-btns"><button class="btn sm" data-act="autoplan" title="重新依遠近分天">' + I('auto') + ' 重排</button>' +
+        (t.prevPlan ? '<button class="btn sm" data-act="restorePlan" title="回到按「自動排行程」之前">' + I('undo') + '</button>' : '') +
+        '<button class="btn sm ghost" data-act="setupToggle" title="修改行程設定">' + I('edit') + ' 修改</button></span></div>';
+      return renderPlanBody(t, f, sum + installBanner());
+    }
+    let h = sec('// Itinerary · 行程設定') + (t.places.length ? '<button class="btn sm ghost setup-close" data-act="setupToggle">' + I('collapse') + ' 收起</button>' : '') + '<div class="row wrap gap">' +
       '<label class="field">天數 <span class="stepper"><button data-act="days" data-d="-1">−</button><b>' + t.days + '</b><button data-act="days" data-d="1">＋</button></span></label>' +
       '<label class="field">出發日 <input type="date" id="startDate" value="' + esc(t.startDate) + '"></label>' +
       '<label class="field">每天 <input type="time" id="dayStart" value="' + esc(t.dayStart || '09:00') + '" step="900"> 出門</label>' +
@@ -444,6 +460,17 @@
       '<div class="row gap"><button class="btn primary grow" data-act="autoplan"' + (t.places.length ? '' : ' disabled') + '>' + I('auto') + ' 自動排行程 <span style="opacity:.7;font-weight:400">· 依遠近分 ' + t.days + ' 天</span></button>' +
       (t.prevPlan ? '<button class="btn" data-act="restorePlan" title="回到按「自動排行程」之前的分天與順序">' + I('undo') + ' 復原排程</button>' : '') + '</div>';
     if (!t.places.length) return h + welcomeHtml();
+    return renderPlanBody(t, f, h);
+  }
+  /** 行程設定要不要展開：設定好、排過行程後預設收起，可自己切換（每趟旅程記住） */
+  function planSetupOpen(t) {
+    let v = null;
+    try { v = localStorage.getItem('tripmap.setup.' + t.id); } catch (e) { v = null; }
+    if (v === '1') return true;
+    if (v === '0') return !t.places.length;
+    return !t.places.length || !t.places.some((p) => p.day >= 1 && p.day <= t.days);
+  }
+  function renderPlanBody(t, f, h) {
     h += todayCard(t);
     h += sec('// Route · 每日路線') + '<div class="row gap route-bar"><div class="chips grow">' + '<button class="chip' + (f ? '' : ' on') + '" data-act="filter" data-d="0"><span class="en">ALL</span><span class="zh">全部</span></button>' +
       range(t.days).map((d) => '<button class="chip' + (f === d ? ' on' : '') + '" data-act="filter" data-d="' + d + '" style="--c:' + dc(d) + '">' + (t.days > 5 ? '<span class="en">D' + d + '</span><span class="zh">第' + d + '天</span>' : '<span class="en">D' + String(d).padStart(2, '0') + '</span><span class="zh">第 ' + d + ' 天</span>') + '</button>').join('') + '</div>' +
@@ -473,11 +500,11 @@
     let move = 0, dist = 0, est = false;
     const infos = legs.map(([a, b]) => { const li = legInfo(t, a, b); move += li.res.duration; dist += li.res.distance; est = est || li.res.estimated; return li; });
     const stay = stops.reduce((s, p) => s + (p.stay || 0) * 60, 0);
-    const ends = C.dayEnds(t, d), hasB = !!(ends.start && ends.end);
+    const ends = C.dayEnds(t, d), hasS = !!ends.start, hasE = !!ends.end;
     const st = C.dayStartTime(t, d);
-    const tl = C.timeline(st, infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), hasB);
-    const late = d === t.days && C.departDeadline(t) != null && hasB && tl.end > C.departDeadline(t);
-    const seq = hasB && stops.length ? [ends.start].concat(stops, [ends.end]) : stops;
+    const tl = C.timeline(st, infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), hasS, hasE);
+    const late = d === t.days && C.departDeadline(t) != null && hasE && tl.end > C.departDeadline(t);
+    const seq = stops.length ? (hasS ? [ends.start] : []).concat(stops, hasE ? [ends.end] : []) : stops;
     const mainMode = mostCommonMode(infos);
     let h = '<div class="day" data-day="' + d + '"><div class="day-h" style="--c:' + dc(d) + '"><b>' + dayLabel(d) + '</b> <span>' + dayDate(t, d) + '</span>' +
       '<span class="day-tools">' + (seq.length >= 2 ? '<a class="btn sm ghost" target="_blank" rel="noopener" href="' + esc(C.gmapsDayUrl(seq, mainMode)) + '" title="整天路線在 Google 地圖開啟（Apple 地圖不支援多個中途點）">' + I('nav') + ' 整天導航</a>' : '') +
@@ -489,13 +516,13 @@
     if (!stops.length) return h + '<div class="empty sm">這天沒有安排</div></div>';
     let li = 0;
     const isAir = (x) => x && x.cat === 'airport' && (x === t.arrive || x === t.depart);
-    if (hasB) h += baseRow(ends.start, C.hm(C.toMin(st)) + (isAir(ends.start) ? ' 出關' : ' 出發'), isAir(ends.start) ? (t.arriveTime ? t.arriveTime + ' 落地' : '抵達') : d > 1 && ends.start !== ends.end ? '退房' : '') + legRow(t, infos[li++]);
+    if (hasS) h += baseRow(ends.start, C.hm(C.toMin(st)) + (isAir(ends.start) ? ' 出關' : ' 出發'), isAir(ends.start) ? (t.arriveTime ? t.arriveTime + ' 落地' : '抵達') : d > 1 && ends.end && ends.start !== ends.end ? '退房' : '') + legRow(t, infos[li++]);
     stops.forEach((p, i) => {
       h += stopRow(t, p, false, i, stops.length, tl.stops[i]);
-      if (i < stops.length - 1 || hasB) h += legRow(t, infos[li++]);
+      if (i < stops.length - 1 || hasE) h += legRow(t, infos[li++]);
     });
-    if (hasB) h += isAir(ends.end) ? baseRow(ends.end, C.hm(tl.end) + ' 到機場', t.departTime ? t.departTime + ' 起飛' : '回程')
-      : baseRow(ends.end, C.hm(tl.end) + (ends.start !== ends.end ? ' 入住' : ' 回到住宿'), '', d);
+    if (hasE) h += isAir(ends.end) ? baseRow(ends.end, C.hm(tl.end) + ' 到機場', t.departTime ? t.departTime + ' 起飛' : '回程')
+      : baseRow(ends.end, C.hm(tl.end) + (ends.start && ends.start !== ends.end ? ' 入住' : ' 回到住宿'), '', d);
     return h + '</div>';
   }
   const dayCost = (stops) => stops.reduce((a, p) => a + (p.cost || 0), 0);
@@ -942,7 +969,7 @@
       const stops = C.dayStops(t, d); if (!stops.length) continue;
       const infos = dayLegs(t, d).map(([a, b]) => legInfo(t, a, b));
       const e0 = C.dayEnds(t, d);
-      const tl = C.timeline(C.dayStartTime(t, d), infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), !!(e0.start && e0.end));
+      const tl = C.timeline(C.dayStartTime(t, d), infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), !!e0.start, !!e0.end);
       stops.forEach((p, i) => events.push({
         date: dayISO(t, d), start: tl.stops[i].arrive, end: tl.stops[i].depart, uid: t.id + '-' + p.id,
         title: 'D' + d + ' ' + C.CATS[p.cat].emoji + ' ' + p.name, location: p.address || p.name, lat: p.lat, lng: p.lng,
@@ -1549,8 +1576,8 @@
       const stops = C.dayStops(t, d);
       if (!stops.length) continue;
       const infos = dayLegs(t, d).map(([a, b]) => legInfo(t, a, b));
-      const e0 = C.dayEnds(t, d), hb = !!(e0.start && e0.end);
-      const tl = C.timeline(C.dayStartTime(t, d), infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), hb);
+      const e0 = C.dayEnds(t, d), hb = !!e0.start, he = !!e0.end;
+      const tl = C.timeline(C.dayStartTime(t, d), infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), hb, he);
       lines.push('', '【Day ' + d + (dayDate(t, d) ? ' ' + dayDate(t, d) : '') + '】');
       let li = 0;
       const legTxt = (x) => '   ↓ ' + C.MODES[x.mode].icon + ' ' + (x.res.estimated ? '約' : '') + C.fmtDur(x.res.duration) + '（' + C.fmtDist(x.res.distance) + '）';
@@ -1558,9 +1585,9 @@
       stops.forEach((p, i) => {
         lines.push(C.hm(tl.stops[i].arrive) + ' ' + C.CATS[p.cat].emoji + ' ' + p.name + (p.note ? '（' + p.note.replace(/\s+/g, ' ').slice(0, 60) + '）' : ''));
         lines.push('   ' + C.gmapsPlaceUrl(p));
-        if (i < stops.length - 1 || hb) lines.push(legTxt(infos[li++]));
+        if (i < stops.length - 1 || he) lines.push(legTxt(infos[li++]));
       });
-      if (hb) lines.push(C.hm(tl.end) + (e0.start !== e0.end ? ' 入住 ' + e0.end.name : ' 回到住宿'));
+      if (he) lines.push(C.hm(tl.end) + (e0.end.cat === 'airport' ? ' 抵達機場 ' + e0.end.name : e0.start && e0.start !== e0.end ? ' 入住 ' + e0.end.name : ' 回到住宿'));
     }
     return lines.join('\n');
   }
@@ -1895,6 +1922,7 @@
         case 'filter': S.ui.dayFilter = +el.dataset.d; renderPanel(true); renderMap(true); break;
         case 'autoplan': autoplan(); break;
         case 'restorePlan': restorePlan(); break;
+        case 'setupToggle': { const t = trip(); try { localStorage.setItem('tripmap.setup.' + t.id, planSetupOpen(t) ? '0' : '1'); } catch (e) { /* 私密模式 */ } renderAll(true); break; }
         case 'setBase': setBaseModal(0); break;
         case 'setAirport': setAirportModal(el.dataset.k); break;
         case 'dayHotel': setBaseModal(+el.dataset.d); break;

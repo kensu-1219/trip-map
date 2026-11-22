@@ -505,3 +505,17 @@ test('刪除某一天：地點回未排、後面往前移、住宿跟著移', ()
   const u = C.newTrip('y'); u.days = 2; u.places = [C.sanitizePlace({ name: 'A', lat: 1, lng: 1, day: 2 })];
   assert.strictEqual(C.clearDay(u, 2), 1); assert.strictEqual(u.places[0].day, 0); assert.strictEqual(u.days, 2);
 });
+
+test('沒設住宿、只設機場：第 1 天從機場出發、最後一天結束在機場', () => {
+  const t = C.newTrip('x'); t.days = 2;
+  t.arrive = C.sanitizePlace({ name: '新千歲空港', lat: 42.7752, lng: 141.6923, cat: 'airport' });
+  t.depart = t.arrive; t.arriveTime = '10:00';
+  t.places = ['A', 'B', 'C', 'D'].map((n, i) => C.sanitizePlace({ name: n, lat: 43.05 + i * 0.01, lng: 141.35 }));
+  const p = C.planDays(t);
+  assert.strictEqual(p.filter((x) => x.day).length, 4);
+  const e1 = C.dayEnds(t, 1), e2 = C.dayEnds(t, 2);
+  assert.strictEqual(e1.start.name, '新千歲空港'); assert.strictEqual(e1.end, null);
+  assert.strictEqual(e2.start, null); assert.strictEqual(e2.end.name, '新千歲空港');
+  const tl = C.timeline('09:00', [600, 600, 600], [60, 60], false, true);
+  assert.strictEqual(tl.stops[0].arrive, 540); assert.strictEqual(tl.end, 540 + 60 + 10 + 60 + 10);
+});

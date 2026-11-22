@@ -735,15 +735,17 @@
    * 時間表：legSecs 為每段移動秒數（有住宿時含頭尾兩段），stays 為每站停留分鐘。
    * 回傳 [{arrive, depart}]（分鐘）與 end（回到住宿或最後離開）。
    */
-  function timeline(startHHMM, legSecs, stays, hasBase) {
+  /** hasStart：第一站前有一段（從住宿／機場出發）；hasEnd：最後一站後有一段（回住宿／去機場） */
+  function timeline(startHHMM, legSecs, stays, hasStart, hasEnd) {
+    if (hasEnd === undefined) hasEnd = hasStart;
     let t = toMin(startHHMM), li = 0;
     const out = [];
     for (let i = 0; i < stays.length; i++) {
-      if (hasBase || i > 0) t += (legSecs[li++] || 0) / 60;
+      if (hasStart || i > 0) t += (legSecs[li++] || 0) / 60;
       const arrive = t; t += stays[i] || 0;
       out.push({ arrive, depart: t });
     }
-    if (hasBase && stays.length) t += (legSecs[li] || 0) / 60;
+    if (hasEnd && stays.length) t += (legSecs[li] || 0) / 60;
     return { stops: out, end: t };
   }
 

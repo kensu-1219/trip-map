@@ -676,3 +676,17 @@ html[data-theme="nier"] .btn.danger { background-image: linear-gradient(var(--da
   input, select, textarea { font-size: 16px !important; }
   input[type="date"], input[type="time"] { min-height: 36px; }
 }
+
+/* 行程設定收起後的摘要列 */
+.setup-sum { display: flex; align-items: center; gap: 10px; padding: 9px 10px 9px 12px; margin: 4px 0 6px; border: 1px solid var(--line); border-radius: var(--r); background: var(--card); cursor: pointer; }
+.setup-sum .grow { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.setup-sum b { font-size: 14px; }
+.setup-sum .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.setup-sum .muted .ic { width: 14px; height: 14px; vertical-align: -2px; }
+.setup-btns { display: flex; gap: 6px; flex: none; }
+.setup-close { float: right; margin-top: -30px; }
+html[data-style="modern"] .setup-sum { border: 0; box-shadow: inset 0 0 0 1px var(--hair); border-radius: 14px; }
+html[data-theme="illust"] .setup-sum { border: 0; border-radius: 16px; box-shadow: inset 0 0 0 1.5px var(--line), 3px 3px 0 #ecdcbd; }
+html[data-theme="nier"] .setup-sum { position: relative; border-color: var(--hair); background-image: var(--grain); }
+html[data-theme="nier"] .setup-sum::before { content: ""; position: absolute; inset: -4px; pointer-events: none; background: var(--corners); background-repeat: no-repeat; }
+@media (max-width: 420px) { .setup-btns .btn .ic + * { display: none; } }

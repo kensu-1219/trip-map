@@ -120,6 +120,10 @@ def handle(route):
         return route.continue_()
     return route.abort()
 
+def open_setup(pg):
+    if pg.locator('.setup-sum').count():
+        pg.click('.setup-sum .btn[data-act=setupToggle]'); pg.wait_for_timeout(200)
+
 def wait_js(pg, expr, timeout=15000):
     """CSP 禁止 eval，所以不用 wait_for_function，改用 evaluate 輪詢"""
     import time as _t
@@ -198,6 +202,7 @@ with sync_playwright() as p:
     page.click('[data-act=setBase]')
     page.select_option('#bSel', label='一蘭 拉麵 新宿店')
     page.click('[data-mact=ok]')
+    open_setup(page)
     page.fill('#startDate', '2026-12-20'); page.dispatch_event('#startDate', 'change')
     page.click('[data-act=autoplan]')
     page.wait_for_timeout(1500)
@@ -240,6 +245,10 @@ with sync_playwright() as p:
     page.click('[data-act=autoplan]'); page.click('[data-mact=ok]'); page.wait_for_timeout(300)
     check('重新自動排程後鎖定點仍在 Day 1', page.evaluate(f'TripApp.trip().places.find(x=>x.id=="{pid}").day') == 1)
 
+    # 7a) 排好行程後，行程設定自動收成一列摘要，可展開
+    check('排好行程後行程設定收成摘要列', page.locator('.setup-sum').count() == 1 and page.locator('[data-act=setAirport]').count() == 0)
+    open_setup(page)
+    check('按「修改」展開行程設定', page.locator('[data-act=setAirport]').count() == 2)
     # 7b) 去程／回程機場
     page.click('[data-act=setAirport][data-k=arrive]')
     page.fill('#aTime', '15:00'); page.fill('#aQ', '羽田機場'); page.click('[data-mact=search]'); page.wait_for_timeout(800)
@@ -341,6 +350,7 @@ with sync_playwright() as p:
     check('找不到照片的地點顯示分類圖示（不亂抓）', sp.evaluate("TripApp.trip().places.find(p=>p.name=='台場').photo") is None)
     check('時間表：顯示 09:00 出發與每站時間', '09:00 出發' in body and '回到住宿' in body and re.search(r'\d\d:\d\d–\d\d:\d\d', body) is not None)
     check('整天導航連結含中途點', 'waypoints=' in (sp.locator('.day-tools a').first.get_attribute('href') or ''))
+    open_setup(sp)
     sp.fill('#dayStart', '08:00'); sp.dispatch_event('#dayStart', 'change'); sp.wait_for_timeout(300)
     check('改每天出門時間 → 時間表跟著變', '08:00 出發' in sp.inner_text('#tabBody'))
     sp.screenshot(path=f'{OUT}/15_sample_timeline.png')
@@ -372,8 +382,10 @@ with sync_playwright() as p:
     check('放大後地名標籤帶順序號碼', vp.locator('.leaflet-tooltip.plabel b').count() >= 10)
     vp.evaluate("document.querySelector('#map').classList.remove('show-labels')")
     # 營業時間警告：把每天出門時間改到 05:00 → 淺草寺 06:00 才開
+    open_setup(vp)
     vp.fill('#dayStart', '04:30'); vp.dispatch_event('#dayStart', 'change'); vp.wait_for_timeout(300)
     check('營業時間衝突警告（太早到）', vp.locator('.warnline').count() >= 1, vp.locator('.warnline').first.inner_text() if vp.locator('.warnline').count() else '')
+    open_setup(vp)
     vp.fill('#dayStart', '09:00'); vp.dispatch_event('#dayStart', 'change'); vp.wait_for_timeout(200)
     check('預估總花費顯示', '預估總花費 ¥' in vp.inner_text('#tabBody'))
     first = vp.evaluate('TripApp.C.dayStops(TripApp.trip(),1)[0].id')
@@ -429,6 +441,7 @@ with sync_playwright() as p:
     # 今天模式＋天氣：出發日設成今天
     import datetime
     today = datetime.datetime.now().strftime('%Y-%m-%d')
+    open_setup(vp)
     vp.fill('#startDate', today); vp.dispatch_event('#startDate', 'change'); vp.wait_for_timeout(400)
     vp.reload(); vp.wait_for_selector('#tabBody'); vp.wait_for_timeout(1500)
     body = vp.inner_text('#tabBody')
@@ -599,6 +612,7 @@ with sync_playwright() as p:
     check('洞爺湖的點排在住洞爺湖前後（Day 3/4）', vp.evaluate("TripApp.trip().places.find(p=>p.name=='昭和新山').day") in (3, 4))
     vp.screenshot(path=f'{OUT}/37_note_tags.png')
     # 天數多時晶片換行，不用左右滑
+    open_setup(vp)
     for _ in range(8): vp.click('[data-act=days][data-d="1"]')
     vp.wait_for_timeout(300)
     box = vp.evaluate("(()=>{const c=document.querySelector('.route-bar .chips');return [c.scrollWidth,c.clientWidth,c.getBoundingClientRect().height]})()")
