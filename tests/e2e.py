@@ -236,11 +236,21 @@ with sync_playwright() as p:
     # 6) 切換單日、改交通方式
     page.click('[data-act=filter][data-d="2"]')
     page.wait_for_timeout(300)
-    first_leg = page.locator('.leg').first
-    first_leg.locator('[data-mode=bike]').click()
-    page.wait_for_timeout(800)
-    on = page.locator('.leg').first.locator('.mode.on').get_attribute('data-mode')
-    check('改交通方式為單車並保存', on == 'bike' and 'bike' in page.evaluate('Object.values(TripApp.trip().legModes)'))
+    page.locator('.leg .leg-mode').first.click()
+    page.wait_for_selector('.mode-grid')
+    check('交通方式視窗有 5 種（含計程車）', page.locator('.mode-opt').count() == 5 and '計程車' in page.inner_text('.mode-grid'))
+    page.screenshot(path=f'{OUT}/08a_leg_editor.png')
+    page.click('[data-mact=m_bike]')
+    page.fill('#legNote', '沿隅田川騎，租借站在雷門旁')
+    page.click('[data-mact=ok]'); page.wait_for_timeout(800)
+    lt = page.locator('.leg').first.inner_text()
+    check('改交通方式為單車並保存', '單車' in lt and 'bike' in page.evaluate('Object.values(TripApp.trip().legModes)'))
+    check('每段備註顯示在行程中', '沿隅田川騎' in lt)
+    page.locator('.leg .leg-mode').first.click(); page.wait_for_selector('.mode-grid')
+    page.click('[data-mact=m_taxi]'); page.click('[data-mact=ok]'); page.wait_for_timeout(500)
+    check('可選計程車', '計程車' in page.locator('.leg').first.inner_text())
+    page.locator('.leg .leg-mode').first.click(); page.wait_for_selector('.mode-grid')
+    page.click('[data-mact=m_bike]'); page.click('[data-mact=ok]'); page.wait_for_timeout(500)
     page.screenshot(path=f'{OUT}/08_day2_bike.png')
 
     # 7) 手動移動到別天 → 鎖定
@@ -283,7 +293,9 @@ with sync_playwright() as p:
     check('復原排程回到原本分天與順序', before == after)
 
     # 8) 量距離（無 Google 金鑰）
-    page.click('#tabs button[data-tab=measure]')
+    page.click('#tabs button[data-tab=places]')
+    check('量距離分頁已移除、改成「展示」', page.locator('#tabs button[data-tab=measure]').count() == 0 and page.locator('#tabs button[data-tab=present]').count() == 1)
+    page.click('[data-act=measureOpen]')
     ids = page.evaluate("(()=>{const t=TripApp.trip();return [t.places.find(p=>p.name=='淺草寺').id,t.places.find(p=>p.name=='上野公園').id]})()")
     page.select_option('#mA', ids[0]); page.select_option('#mB', ids[1])
     page.wait_for_timeout(1500)
@@ -303,6 +315,21 @@ with sync_playwright() as p:
     check('顯示票價 ¥210', '¥210' in mt)
     page.screenshot(path=f'{OUT}/10_measure_google_transit.png')
 
+    # 9b) 展示模式
+    page.click('#tabs button[data-tab=present]'); page.wait_for_timeout(900)
+    check('展示：右側天數條', page.locator('#pRail .pr-d').count() == page.evaluate('TripApp.trip().days'))
+    page.click('#pRail .pr-d[data-d="2"]'); page.wait_for_timeout(900)
+    check('展示：點 D2 只顯示該天並有站點卡片', page.evaluate('TripApp.S.ui.dayFilter') == 2 and page.locator('#pCards .pcard[data-i]').count() >= 2)
+    check('展示：地圖上每段標交通方式與時間', page.locator('.leg-badge').count() >= 1)
+    check('展示：卡片帶出備註', '沿隅田川騎' in page.inner_text('#pCards') or page.evaluate("Object.keys(TripApp.trip().legNotes).length") >= 1)
+    page.screenshot(path=f'{OUT}/09c_present.png')
+    page.click('#pCards .pcard[data-i="1"]'); page.wait_for_timeout(1000)
+    check('展示：點卡片飛到該站', page.locator('#pCards .pcard.on').count() == 1)
+    page.click('[data-act=pPlay]'); page.wait_for_timeout(3600)
+    check('展示：播放自動前進', page.evaluate('TripApp.S.ui.present.idx') >= 1 and page.evaluate('TripApp.S.ui.present.playing') in (True, False))
+    page.click('#pRail .pr-x'); page.wait_for_timeout(500)
+    check('離開展示後恢復', page.locator('#presentUI').count() == 0 and page.locator('.leg-badge').count() == 0)
+
     # 10) 分享連結往返
     page.click('#btnShare'); page.wait_for_selector('#shareLink')
     link = page.input_value('#shareLink')
@@ -316,6 +343,7 @@ with sync_playwright() as p:
     page2.click('[data-mact=ok]'); page2.wait_for_timeout(300)
     n2 = page2.evaluate('TripApp.trip().places.length'); n1 = page.evaluate('TripApp.trip().places.length')
     check('另一台裝置開分享連結 → 匯入同樣地點與分天', n2 == n1 and page2.evaluate('TripApp.trip().base.name') == '一蘭 拉麵 新宿店', f'{n2}/{n1}')
+    check('分享連結帶上每段備註', page2.evaluate("Object.values(TripApp.trip().legNotes).join()") == page.evaluate("Object.values(TripApp.trip().legNotes).join()") != '')
     page2.context.close()
 
     # 11) 重新整理後資料還在

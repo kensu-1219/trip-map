@@ -3,11 +3,11 @@
   'use strict';
   const C = window.TripCore, SV = window.TripServices, SY = window.TripSync, LS = SV.LS;
   const I = (n, c) => window.TripIcons.ic(n, c);
-  const MODE_IC = { walk: 'walk', bike: 'bike', drive: 'car', transit: 'transit' };
+  const MODE_IC = { walk: 'walk', bike: 'bike', drive: 'car', transit: 'transit', taxi: 'taxi' };
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.15.1';
+  const VERSION = '1.16.0';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -202,7 +202,7 @@
       const m = L.marker([p.lat, p.lng], { icon: pinIcon(C.CAT_COLOR[p.cat] || C.CAT_COLOR.other, '', cls, catIc(p.cat)), title: p.name, zIndexOffset: dim(p) ? -100 : 0 });
       m.bindPopup(() => popupHtml(p), { maxWidth: 260 });
       if (!dim(p) && t.places.length <= 300) m.bindTooltip((num ? '<b style="--lc:' + dc(p.day) + '">' + num + '</b>' : '') + esc(p.name.length > 14 ? p.name.slice(0, 13) + '…' : p.name), { permanent: true, direction: 'right', offset: [16, -18], className: 'plabel' });
-      m.on('click', () => syncListTo(p.id));
+      m.on('click', () => { if (S.ui.present) { const i = presentSeq(trip(), S.ui.present.day).findIndex((x) => x.p.id === p.id); if (i >= 0) presentGo(i, true); } else syncListTo(p.id); });
       markers[p.id] = m;
       m.addTo(markerLayer);
     }
@@ -288,6 +288,10 @@
           const leg = legInfo(t, a, b);
           const real = !leg.res.estimated && leg.res.coords && leg.res.coords.length > 2;
           const coords = real ? leg.res.coords : arcCoords(a, b);
+          if (S.ui.present && coords.length) {
+            const mid = coords[Math.floor(coords.length / 2)];
+            L.marker(mid, { interactive: false, zIndexOffset: 800, icon: L.divIcon({ className: 'leg-badge-wrap', html: '<span class="leg-badge" style="--c:' + col + '">' + I(MODE_IC[leg.mode]) + C.fmtDur(leg.res.duration) + '</span>', iconSize: [0, 0] }) }).addTo(routeLayer);
+          }
           const rs = ROUTE_STYLE[activeTheme()] || ROUTE_STYLE.def;
           const w = (f ? 4.5 : 3.5) * rs.k;
           if (real) {
@@ -336,8 +340,7 @@
       placeA(p, 'pg-btn', I('nav') + '<span>導航</span>') +
       '<button class="pg-btn" data-act="nearbyFrom" data-id="' + p.id + '">' + I('search') + '<span>附近</span></button>' +
       (isBase ? '' : '<button class="pg-btn' + (p.done ? ' on' : '') + '" data-act="toggleDone" data-id="' + p.id + '">' + I(p.done ? 'done' : 'undone') + '<span>' + (p.done ? '已去過' : '打卡') + '</span></button>') +
-      '<button class="pg-btn" data-act="measureFrom" data-id="' + p.id + '">' + I('measure') + '<span>從這裡量</span></button>' +
-      '<button class="pg-btn" data-act="measureTo" data-id="' + p.id + '">' + I('measure') + '<span>量到這裡</span></button>' +
+
       (isBase ? '' : '<button class="pg-btn" data-act="edit" data-id="' + p.id + '">' + I('edit') + '<span>編輯</span></button>') +
       '</div></div>';
   }
@@ -415,7 +418,7 @@
   /* ================= 面板 ================= */
   function switchTab(tab) {
     S.ui.tab = tab;
-    document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
+    document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab || (tab === 'measure' && b.dataset.tab === 'places')));
     if (isMobile() && ($('#panel').classList.contains('peek') || $('#panel').classList.contains('mini'))) setSheet('half');
     renderPanel(); renderMap(false);
   }
@@ -806,18 +809,132 @@
     if (!li) return '';
     const r = li.res;
     const [aId, bId] = li.key.split('>');
-    const a = findPoint(t, aId), b = findPoint(t, bId);
+    const a = findPointAny(t, aId), b = findPointAny(t, bId);
     let detail = '';
     if (r.steps && r.steps.length) {
       detail = '<div class="steps">' + r.steps.map((s) => s.walk ? I('walk') + Math.max(1, Math.round(s.sec / 60)) + '分' :
         '<span class="line" style="--lc:' + esc(s.color || '#555') + '">' + stepIc(s.icon) + ' ' + esc(s.line) + '</span> ' + esc(s.from) + '→' + esc(s.to) + (s.stops ? '（' + s.stops + '站）' : '')).join(' › ') + '</div>';
     }
-    const status = r.estimated ? (li.mode === 'transit' && !settings().gkey ? '估算' : r.error ? '估算（' + esc(r.error) + '）' : '估算中…') : (r.source === 'google' ? 'Google' : '實際路線');
+    const note = (t.legNotes || {})[li.key] || '';
+    const tag = r.estimated ? (r.note ? '估算・' + esc(r.note) : '估算') : r.source === 'google' ? 'Google' : '';
     return '<div class="leg">' +
-      '<div class="modes">' + Object.entries(C.MODES).map(([k, m]) => '<button class="mode' + (k === li.mode ? ' on' : '') + '" data-act="mode" data-key="' + esc(li.key) + '" data-mode="' + k + '" title="' + m.label + '">' + I(MODE_IC[k]) + '</button>').join('') + '</div>' +
-      '<div class="leg-info"><b>' + (r.estimated ? '約 ' : '') + C.fmtDur(r.duration) + '</b> · ' + C.fmtDist(r.distance) + (r.fare ? ' · <b>' + esc(C.fmtFare(r.fare)) + '</b>' : '') + ' <span class="muted">(' + status + (r.note ? '，' + esc(r.note) : '') + ')</span>' + detail + '</div>' +
-      (a && b ? navA(a, b, li.mode, 'btn sm ghost', I('nav'), '導航') : '') +
+      '<button class="leg-mode' + (li.auto ? ' auto' : '') + '" data-act="legEdit" data-key="' + esc(li.key) + '" title="改交通方式、加備註">' + I(MODE_IC[li.mode]) + '<span>' + C.MODES[li.mode].label + '</span></button>' +
+      '<div class="leg-info"><b>' + (r.estimated ? '約 ' : '') + C.fmtDur(r.duration) + '</b> · ' + C.fmtDist(r.distance) + (r.fare ? ' · <b>' + esc(C.fmtFare(r.fare)) + '</b>' : '') + (tag ? ' <span class="muted">' + tag + '</span>' : '') +
+      (note ? '<div class="leg-note">' + I('edit') + ' ' + esc(note) + '</div>' : '') + detail + '</div>' +
+      (a && b ? navA(a, b, li.mode, 'icon-btn sm ghost', I('nav'), '導航') : '') +
       '</div>';
+  }
+
+  /* ---------- 展示模式：右側天數條＋下方站點卡片＋地圖上標交通方式 ---------- */
+  let presentTimer = null;
+  function togglePresent() {
+    const t = trip();
+    if (S.ui.present) {
+      clearInterval(presentTimer); presentTimer = null;
+      const prev = S.ui.present.prev;
+      S.ui.present = null; document.body.classList.remove('presenting');
+      const ui = $('#presentUI'); if (ui) ui.remove();
+      S.ui.dayFilter = prev.dayFilter;
+      document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === S.ui.tab));
+      if (isMobile()) setSheet(prev.sheet || 'half');
+      renderMap(true); return;
+    }
+    const d = S.ui.dayFilter || todayIndex(t) || (t.places.some((p) => p.day === 1) ? 1 : (t.places.find((p) => p.day) || {}).day || 1);
+    S.ui.present = { day: d, idx: -1, playing: false, prev: { dayFilter: S.ui.dayFilter, sheet: S.data.flags.sheet } };
+    document.body.classList.add('presenting');
+    document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === 'present'));
+    if (isMobile()) setSheet('mini');
+    presentDay(d);
+  }
+  function presentSeq(t, d) {
+    const legs = dayLegs(t, d);
+    if (!legs.length) return C.dayStops(t, d).map((p) => ({ p, leg: null }));
+    const seq = legs.map(([a, b]) => ({ p: a, leg: legInfo(t, a, b) }));
+    seq.push({ p: legs[legs.length - 1][1], leg: null });
+    return seq;
+  }
+  function presentDay(d) {
+    const t = trip(); const P = S.ui.present; if (!P) return;
+    clearInterval(presentTimer); presentTimer = null; P.playing = false;
+    P.day = Math.max(1, Math.min(t.days, d)); P.idx = -1;
+    S.ui.dayFilter = P.day;
+    renderPresentUI(); renderMap(true);
+  }
+  function renderPresentUI() {
+    const t = trip(); const P = S.ui.present; if (!P) return;
+    let ui = $('#presentUI');
+    if (!ui) { ui = document.createElement('div'); ui.id = 'presentUI'; document.body.appendChild(ui); }
+    const seq = presentSeq(t, P.day);
+    const stops = C.dayStops(t, P.day);
+    const ends = C.dayEnds(t, P.day);
+    const tl = C.timeline(C.dayStartTime(t, P.day), seq.filter((x) => x.leg).map((x) => x.leg.res.duration), stops.map((p) => p.stay || 0), !!ends.start && stops.length > 0, !!ends.end && stops.length > 0);
+    const moveSec = seq.reduce((a, x) => a + (x.leg ? x.leg.res.duration : 0), 0);
+    const date = dayDate(t, P.day);
+    let si = 0;
+    const cards = seq.map((x, i) => {
+      const isStop = stops.includes(x.p);
+      const time = isStop && tl.stops[si] ? C.hm(tl.stops[si].arrive) : '';
+      if (isStop) si++;
+      const ic = isStop ? catIc(x.p.cat) : x.p.cat === 'airport' ? catIc('airport') : I('hotel');
+      const leg = x.leg ? '<div class="pc-leg">' + I(MODE_IC[x.leg.mode]) + ' ' + C.MODES[x.leg.mode].label + ' ' + (x.leg.res.estimated ? '約' : '') + C.fmtDur(x.leg.res.duration) +
+        ((t.legNotes || {})[x.leg.key] ? '<small>' + esc(t.legNotes[x.leg.key]) + '</small>' : '') + '</div>' : '';
+      return '<button class="pcard' + (i === P.idx ? ' on' : '') + '" data-act="pGo" data-i="' + i + '" style="--c:' + dc(P.day) + '"><span class="pc-top"><span class="pc-n">' + (isStop ? x.p.order + 1 : '') + '</span>' + ic + (time ? '<span class="pc-time">' + time + '</span>' : '') + '</span>' +
+        '<b>' + esc(x.p.name) + '</b>' + leg + '</button>';
+    }).join('');
+    ui.innerHTML = '<div id="pRail">' + '<button class="pr-x" data-act="present" title="離開展示">' + I('close') + '</button>' +
+      range(t.days).map((d) => '<button class="pr-d' + (d === P.day ? ' on' : '') + '" data-act="pDay" data-d="' + d + '" style="--c:' + dc(d) + '"><b>D' + d + '</b><small>' + C.dayStops(t, d).length + '站</small></button>').join('') + '</div>' +
+      '<div id="pCards"><div class="pcard sum" style="--c:' + dc(P.day) + '"><b>第 ' + P.day + ' 天' + (date ? ' · ' + esc(date) : '') + '</b><small>' + stops.length + ' 站 · 移動 ' + C.fmtDur(moveSec) + (stops.length ? ' · ' + C.hm(C.toMin(C.dayStartTime(t, P.day))) + '–' + C.hm(tl.end) : '') + '</small>' +
+      (seq.length > 1 ? '<span class="pc-play" data-act="pPlay" role="button">' + I(P.playing ? 'pause' : 'play') + (P.playing ? ' 暫停' : ' 播放') + '</span>' : '') + '</div>' + (cards || '<div class="pcard sum"><small>這天沒有安排</small></div>') + '</div>';
+  }
+  function presentGo(i, user) {
+    const t = trip(); const P = S.ui.present; if (!P) return;
+    if (user && P.playing) { clearInterval(presentTimer); presentTimer = null; P.playing = false; }
+    const seq = presentSeq(t, P.day); const x = seq[i]; if (!x) return;
+    P.idx = i;
+    map.flyTo([x.p.lat, x.p.lng], Math.max(map.getZoom(), 15), { duration: 0.8 });
+    if (markers[x.p.id]) highlightMarker(x.p.id, false);
+    renderPresentUI();
+    const c = document.querySelector('#pCards .pcard[data-i="' + i + '"]'); if (c) c.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }
+  function presentPlay() {
+    const t = trip(); const P = S.ui.present; if (!P) return;
+    if (P.playing) { clearInterval(presentTimer); presentTimer = null; P.playing = false; renderPresentUI(); return; }
+    const n = presentSeq(t, P.day).length; if (!n) return;
+    P.playing = true;
+    presentGo(P.idx >= 0 && P.idx < n - 1 ? P.idx + 1 : 0);
+    presentTimer = setInterval(() => {
+      const Q = S.ui.present; if (!Q || !Q.playing) { clearInterval(presentTimer); return; }
+      if (Q.idx >= n - 1) { clearInterval(presentTimer); presentTimer = null; Q.playing = false; renderPresentUI(); renderMap(true); return; }
+      presentGo(Q.idx + 1);
+    }, 3200);
+  }
+
+  /** 這段怎麼移動：選方式（含計程車）＋備註 */
+  function legEditModal(key) {
+    const t = trip();
+    const [aId, bId] = key.split('>');
+    const a = findPointAny(t, aId), b = findPointAny(t, bId);
+    if (!a || !b) return;
+    const cur = legInfo(t, a, b);
+    let pick = cur.mode;
+    const opts = ['walk', 'transit', 'taxi', 'drive', 'bike'].map((k) => {
+      const r = S.legs[k + '|' + a.lat + ',' + a.lng + '|' + b.lat + ',' + b.lng] || SV.peekLeg(a, b, k);
+      return '<button class="mode-opt' + (k === pick ? ' on' : '') + '" data-mact="m_' + k + '">' + I(MODE_IC[k]) + '<b>' + C.MODES[k].label + '</b><small>' + (r.estimated ? '約 ' : '') + C.fmtDur(r.duration) + '</small></button>';
+    }).join('');
+    const acts = {
+      ok: () => {
+        t.legModes[key] = pick;
+        t.legNotes = t.legNotes || {};
+        const n = $('#legNote').value.trim().slice(0, 200);
+        if (n) t.legNotes[key] = n; else delete t.legNotes[key];
+        closeModal(); save(); renderPanel(true); renderMap(false);
+      },
+    };
+    ['walk', 'transit', 'taxi', 'drive', 'bike'].forEach((k) => { acts['m_' + k] = () => { pick = k; document.querySelectorAll('.mode-opt').forEach((x) => x.classList.toggle('on', x.dataset.mact === 'm_' + k)); }; });
+    openModal('<h3>這段怎麼移動</h3><p class="muted small">' + esc(a.name) + ' → ' + esc(b.name) + ' · 直線 ' + C.fmtDist(cur.dist) + '</p>' +
+      '<div class="mode-grid">' + opts + '</div>' +
+      '<label class="lbl">備註（路線、月台、票價…）</label><textarea id="legNote" rows="2" maxlength="200" placeholder="例：JR 快速エアポート 往札幌，3 號月台，¥1,150">' + esc((t.legNotes || {})[key] || '') + '</textarea>' +
+      '<div class="row gap end"><button class="btn primary" data-mact="ok">儲存</button><button class="btn" data-mact="close">取消</button></div>', acts);
   }
 
   function renderPlaces() {
@@ -827,7 +944,7 @@
     const counts = {};
     t.places.forEach((p) => { counts[p.cat] = (counts[p.cat] || 0) + 1; });
     const list = t.places.filter((p) => (!cf || p.cat === cf) && (!q || (p.name + ' ' + p.note + ' ' + p.address).toLowerCase().includes(q)));
-    let h = sec('// Locations · ' + t.places.length) + '<div class="row gap"><input id="placeSearch" type="search" placeholder="篩選 ' + t.places.length + ' 個地點…" value="' + esc(S.ui.search) + '" class="grow"></div>';
+    let h = sec('// Locations · ' + t.places.length) + '<div class="row gap"><input id="placeSearch" type="search" placeholder="篩選 ' + t.places.length + ' 個地點…" value="' + esc(S.ui.search) + '" class="grow"><button class="btn" data-act="measureOpen" title="量任兩點的距離與交通時間">' + I('measure') + ' 量距離</button></div>';
     if (!t.places.length) return h + '<div class="empty">還沒有地點。</div>';
     h += '<div class="chips catchips"><button class="chip' + (cf ? '' : ' on') + '" data-act="catFilter" data-c="">全部 ' + t.places.length + '</button>' +
       Object.keys(C.CATS).filter((k) => counts[k]).map((k) => '<button class="chip ic-chip' + (cf === k ? ' on' : '') + '" data-act="catFilter" data-c="' + k + '" title="' + C.CATS[k].label + '">' + catIc(k) + ' ' + counts[k] + '</button>').join('') + '</div>';
@@ -876,13 +993,14 @@
 
   function renderMeasure() {
     const t = trip();
+    const back = '<button class="linkbtn" data-act="measureBack">' + I('up') + ' 回到地點</button>';
     const pts = allPoints(t);
     const extra = Object.values(S.ui.mpoints || {});
     const opts = (sel) => '<option value="">— 選擇 —</option>' +
       (S.ui.me ? '<option value="me"' + (sel === 'me' ? ' selected' : '') + '>◎ 我的位置</option>' : '') +
       extra.map((p) => '<option value="' + p.id + '"' + (sel === p.id ? ' selected' : '') + '>⌖ ' + esc(p.name) + '（' + p.lat.toFixed(4) + ',' + p.lng.toFixed(4) + '）</option>').join('') +
       pts.map((p) => '<option value="' + p.id + '"' + (sel === p.id ? ' selected' : '') + '>' + (/^base/.test(p.id) ? '■ 住宿 ' : p.day ? 'D' + p.day + ' ' : '') + esc(p.name) + '</option>').join('');
-    let h = sec('// Measure · 量距離') + '<div class="measure">' +
+    let h = back + sec('// Measure · 量兩點距離') + '<div class="measure">' +
       '<label class="lbl">起點</label><div class="row gap"><select id="mA" class="grow">' + opts(S.ui.measure.a) + '</select><button class="btn sm" data-act="pickA" title="在地圖上點">' + I('map') + '</button></div>' +
       '<div class="center"><button class="icon-btn" data-act="swap" title="對調">' + I('swap') + '</button></div>' +
       '<label class="lbl">終點</label><div class="row gap"><select id="mB" class="grow">' + opts(S.ui.measure.b) + '</select><button class="btn sm" data-act="pickB" title="在地圖上點">' + I('map') + '</button></div></div>';
@@ -1136,16 +1254,26 @@
         I('walk') + ' ' + C.fmtDist(r.dist * 1.25) + ' · 約 ' + C.fmtDur(C.estimateLeg(r.dist, 'walk').duration) + (r.sub ? ' · ' + esc(r.sub.slice(0, 50)) : '') + '</span></span>' +
         navA(nb.origin, r, 'walk', 'icon-btn sm', I('nav'), '步行導航') +
         (r.added ? '<span class="icon-btn sm tick on" title="已加入">' + I('check') + '</span>' : '<button class="icon-btn sm" data-act="nearbyAdd" data-i="' + i + '" title="加入行程地點">' + I('add') + '</button>') + '</div>').join('') + '</div>' +
-        '<div class="muted small">資料來源：' + (nb.source === 'google' ? 'Google 地圖' : 'OpenStreetMap 社群（可能不完整）') + '</div>';
+        '<div class="muted small">資料來源：' + (nb.source === 'google' ? 'Google 地圖' : 'OpenStreetMap 社群（可能不完整）') + (nb.cached ? '・剛查過的結果，不另計額度' : '') + '</div>';
     }
     return h;
   }
   async function runNearby(kind) {
     const nb = S.ui.nearby; if (!nb) return;
     nb.kind = kind; nb.loading = true; nb.error = ''; nb.list = null; renderPanel(true);
+    // 同一地點同一類別 6 小時內重點不再打 API（Google 每點一次算一次額度）
+    const ck = 'nb|' + kind + '|' + nb.origin.lat.toFixed(4) + ',' + nb.origin.lng.toFixed(4) + '|' + (settings().gkey ? 'g' : 'o');
+    const cache = SV.LS.get('tm-nbCache', {}) || {};
+    const hit = cache[ck];
     try {
-      const r = await SV.nearby(kind, nb.origin, kind === 'station' || kind === 'sight' ? 1200 : 700, settings());
-      nb.list = r.list; nb.source = r.source;
+      if (hit && Date.now() - hit.at < 6 * 3600e3) { nb.list = hit.list; nb.source = hit.source; nb.cached = true; }
+      else {
+        const r = await SV.nearby(kind, nb.origin, kind === 'station' || kind === 'sight' ? 1200 : 700, settings());
+        nb.list = r.list; nb.source = r.source; nb.cached = false;
+        cache[ck] = { at: Date.now(), list: r.list, source: r.source };
+        const keys = Object.keys(cache).sort((a, b) => cache[b].at - cache[a].at).slice(0, 40);
+        SV.LS.set('tm-nbCache', Object.fromEntries(keys.map((k) => [k, cache[k]])));
+      }
     } catch (e) {
       const why = e && (e.name === 'AbortError' || /abort|timeout/i.test(e.message || '')) ? '伺服器太久沒回應' : (e && e.message) || '連線失敗';
       nb.error = '附近搜尋暫時連不上（' + why + '），稍後再試。' + (settings().gkey ? '' : '填了 Google 金鑰會改用 Google，比較穩。');
@@ -1782,7 +1910,7 @@
       const tl = C.timeline(C.dayStartTime(t, d), infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), hb, he);
       lines.push('', '【Day ' + d + (dayDate(t, d) ? ' ' + dayDate(t, d) : '') + '】');
       let li = 0;
-      const legTxt = (x) => '   ↓ ' + C.MODES[x.mode].icon + ' ' + (x.res.estimated ? '約' : '') + C.fmtDur(x.res.duration) + '（' + C.fmtDist(x.res.distance) + '）';
+      const legTxt = (x) => '   ↓ ' + C.MODES[x.mode].icon + ' ' + (x.res.estimated ? '約' : '') + C.fmtDur(x.res.duration) + '（' + C.fmtDist(x.res.distance) + '）' + ((t.legNotes || {})[x.key] ? ' ' + t.legNotes[x.key] : '');
       if (hb) { lines.push(C.hm(C.toMin(C.dayStartTime(t, d))) + (e0.start.cat === 'airport' ? ' 從機場出發（' : ' 從住宿出發（') + e0.start.name + '）'); lines.push(legTxt(infos[li++])); }
       stops.forEach((p, i) => {
         lines.push(C.hm(tl.stops[i].arrive) + ' ' + C.CATS[p.cat].emoji + ' ' + p.name + (p.note ? '（' + p.note.replace(/\s+/g, ' ').slice(0, 60) + '）' : ''));
@@ -2079,7 +2207,7 @@
     applyTheme(); renderTripSelect(); renderPanel(true); renderMap(!!fit); updateBadge(); }
 
   function bind() {
-    $('#tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (b) switchTab(b.dataset.tab); });
+    $('#tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (!b) return; if (b.dataset.tab === 'present') togglePresent(); else { if (S.ui.present) togglePresent(); switchTab(b.dataset.tab); } });
     $('#sheetHandle').addEventListener('click', () => {
       const p = $('#panel');
       if (p._justDragged && Date.now() - p._justDragged < 350) return;
@@ -2139,6 +2267,13 @@
         case 'edit': map.closePopup(); editPlace(id); break;
         case 'focus': { const p = findPoint(t, id); if (p) { if (window.innerWidth < 900) setSheet('peek'); setTimeout(() => { map.setView([p.lat, p.lng], Math.max(map.getZoom(), 15)); markerLayer.eachLayer((m) => { if (m.options.title === p.name) m.openPopup(); }); }, 280); } break; }
         case 'mode': t.legModes[el.dataset.key] = el.dataset.mode; save(); renderPanel(true); renderMap(false); break;
+        case 'legEdit': legEditModal(el.dataset.key); break;
+        case 'present': togglePresent(); break;
+        case 'pDay': presentDay(+el.dataset.d); break;
+        case 'pGo': presentGo(+el.dataset.i, true); break;
+        case 'pPlay': presentPlay(); break;
+        case 'measureOpen': switchTab('measure'); break;
+        case 'measureBack': switchTab('places'); break;
         case 'addGo': handleAddInput(); break;
         case 'pickAdd': setPick('add'); break;
         case 'pickResult': {

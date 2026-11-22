@@ -748,3 +748,65 @@ html[data-theme="nier"] .pg-btn { border-radius: 0; border-color: var(--hair); l
 html[data-theme="nier"] .pop-chip { border-radius: 0; background: var(--ink); color: var(--paper); }
 .pop-meta .muted { margin: 0; }
 .leaflet-popup-content { min-width: 240px; }
+
+/* ---------- 每段移動：方式按鈕＋備註 ---------- */
+.leg-mode { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px 0 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); color: var(--ink); font: 600 12px var(--sans); cursor: pointer; }
+.leg-mode .ic { width: 16px; height: 16px; }
+.leg-mode.auto { border-style: dashed; color: var(--ink-soft); }
+.leg-note { margin-top: 3px; font-size: 12px; color: var(--ink-soft); line-height: 1.4; }
+.leg-note .ic { width: 12px; height: 12px; vertical-align: -1px; opacity: .7; }
+.mode-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 10px 0 6px; }
+.mode-opt { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 2px 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); font: 12px var(--sans); cursor: pointer; }
+.mode-opt .ic { width: 22px; height: 22px; }
+.mode-opt b { font-size: 12px; } .mode-opt small { font-size: 11px; color: var(--muted); }
+.mode-opt.on { background: var(--pri); color: var(--on-pri); border-color: var(--pri); }
+.mode-opt.on small { color: inherit; opacity: .85; }
+html[data-style="modern"] .leg-mode { border: 0; background: var(--soft); }
+html[data-style="modern"] .mode-opt { border: 0; background: var(--soft); }
+html[data-style="modern"] .mode-opt.on { background: var(--pri); }
+html[data-theme="nier"] .leg-mode, html[data-theme="nier"] .mode-opt { border-radius: 0; }
+html[data-theme="nier"] .leg { background: none; border-left: 1px solid var(--line); }
+html[data-theme="illust"] .leg-mode { border: 0; box-shadow: inset 0 0 0 1.5px var(--line); }
+
+/* 地點視窗：拿掉量距離後 4 格一列 */
+.pop-grid { grid-template-columns: repeat(4, 1fr); }
+
+/* 選取的標記：不再放大浮起，改成外圈光暈脈動 */
+.leaflet-marker-icon.hl .pin { transform: none; box-shadow: 0 0 0 3px var(--paper), 0 0 0 5px var(--c), 0 3px 8px rgba(0,0,0,.25); animation: hl-pulse 1.6s ease-out 2; }
+html[data-theme="nier"] .leaflet-marker-icon.hl .pin { transform: rotate(45deg); }
+@keyframes hl-pulse { 0% { box-shadow: 0 0 0 3px var(--paper), 0 0 0 5px var(--c), 0 0 0 5px color-mix(in srgb, var(--c) 40%, transparent); } 100% { box-shadow: 0 0 0 3px var(--paper), 0 0 0 5px var(--c), 0 0 0 16px transparent; } }
+@media (prefers-reduced-motion: reduce) { .leaflet-marker-icon.hl .pin { animation: none; } }
+
+/* ---------- 展示模式 ---------- */
+body.presenting #mapTools { display: none; }
+#pRail { position: fixed; right: 10px; top: calc(var(--top) + 96px); z-index: 960; display: flex; flex-direction: column; gap: 6px; max-height: calc(100vh - var(--top) - 330px); overflow-y: auto; padding: 2px; scrollbar-width: none; }
+#pRail::-webkit-scrollbar { display: none; }
+#pRail button { width: 48px; border: 0; border-radius: 12px; background: var(--card); color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.18); cursor: pointer; font: inherit; }
+.pr-x { height: 36px; display: grid; place-items: center; }
+.pr-d { display: flex; flex-direction: column; align-items: center; padding: 6px 0 5px; border-left: 4px solid var(--c) !important; }
+.pr-d b { font-size: 13px; } .pr-d small { font-size: 10px; color: var(--muted); }
+.pr-d.on { background: var(--c) !important; color: #fff !important; }
+.pr-d.on small { color: #fff; opacity: .85; }
+#pCards { position: fixed; left: 0; right: 0; bottom: 84px; z-index: 960; display: flex; gap: 10px; overflow-x: auto; padding: 4px 12px 10px; scroll-snap-type: x mandatory; scrollbar-width: none; }
+#pCards::-webkit-scrollbar { display: none; }
+@media (min-width: 900px) { #pCards { left: var(--side); bottom: 16px; } #pRail { top: calc(var(--top) + 110px); } }
+.pcard { flex: none; width: 168px; scroll-snap-align: center; display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 10px 12px; border: 0; border-top: 4px solid var(--c); border-radius: 14px; background: var(--card); color: var(--ink); box-shadow: 0 2px 10px rgba(0,0,0,.18); font: inherit; cursor: pointer; }
+.pcard b { font-size: 14px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pcard.on { outline: 2px solid var(--c); outline-offset: 1px; }
+.pcard.sum { width: 150px; background: var(--c); color: #fff; border-top-color: transparent; }
+.pcard.sum small { opacity: .9; font-size: 12px; }
+.pc-top { display: flex; align-items: center; gap: 6px; color: var(--c); }
+.pc-top .ic { width: 16px; height: 16px; }
+.pc-n { min-width: 20px; height: 20px; border-radius: 50%; background: var(--c); color: #fff; font-size: 11px; display: grid; place-items: center; }
+.pc-n:empty { display: none; }
+.pc-time { margin-left: auto; font: 600 12px var(--mono); color: var(--ink-soft); }
+.pc-leg { margin-top: auto; padding-top: 6px; border-top: 1px dashed var(--hair); font-size: 12px; color: var(--ink-soft); display: flex; flex-wrap: wrap; align-items: center; gap: 3px; }
+.pc-leg .ic { width: 14px; height: 14px; }
+.pc-leg small { width: 100%; font-size: 11px; color: var(--muted); }
+.pc-play { margin-top: 6px; display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,.25); font-size: 12px; font-weight: 600; cursor: pointer; }
+.pc-play .ic { width: 14px; height: 14px; }
+.leg-badge-wrap { width: 0 !important; height: 0 !important; }
+.leg-badge { position: absolute; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px 2px 5px; border-radius: 999px; background: var(--card); color: var(--ink); border: 1.5px solid var(--c); font: 600 11px var(--sans); white-space: nowrap; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+.leg-badge .ic { width: 13px; height: 13px; color: var(--c); }
+html[data-theme="nier"] #pRail button, html[data-theme="nier"] .pcard, html[data-theme="nier"] .leg-badge { border-radius: 0; }
+html[data-theme="illust"] .pcard { box-shadow: inset 0 0 0 1.5px var(--line), 3px 3px 0 rgba(61,47,36,.18); }

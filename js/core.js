@@ -689,6 +689,10 @@
     if (t.legModes && typeof t.legModes === 'object') {
       for (const [k, v] of Object.entries(t.legModes)) if (MODES[v]) out.legModes[String(k).slice(0, 90)] = v;
     }
+    out.legNotes = {};
+    if (t.legNotes && typeof t.legNotes === 'object') {
+      for (const [k, v] of Object.entries(t.legNotes).slice(0, 2000)) { const n = String(v || '').trim().slice(0, 200); if (n) out.legNotes[String(k).slice(0, 90)] = n; }
+    }
     out.theme = THEMES.includes(t.theme) ? t.theme : 'auto';
     out.currency = String(t.currency || '').replace(/[^A-Za-z$¥€£₩NT]/g, '').slice(0, 5);
     out.checklist = (Array.isArray(t.checklist) ? t.checklist : []).filter((c) => c && typeof c.t === 'string').slice(0, 300)
@@ -723,12 +727,13 @@
     bike: { label: '單車', icon: '🚲', kmh: 14, detour: 1.25, osrm: 'routed-bike', gm: 'bicycling', g: 'BICYCLE' },
     drive: { label: '開車', icon: '🚗', kmh: 28, detour: 1.35, osrm: 'routed-car', gm: 'driving', g: 'DRIVE' },
     transit: { label: '大眾運輸', icon: '🚇', kmh: 24, detour: 1.3, gm: 'transit', g: 'TRANSIT', wait: 8 * 60 },
+    taxi: { label: '計程車', icon: '🚕', kmh: 26, detour: 1.35, osrm: 'routed-car', gm: 'driving', g: 'DRIVE', wait: 4 * 60 },
   };
 
   function estimateLeg(meters, mode) {
     const m = MODES[mode] || MODES.walk;
     const dist = meters * m.detour;
-    let sec = (dist / 1000 / m.kmh) * 3600;
+    let sec = (dist / 1000 / m.kmh) * 3600 + (mode === 'taxi' ? m.wait : 0);
     if (mode === 'transit') {
       if (meters < 800) return { distance: meters * 1.25, duration: (meters * 1.25 / 1000 / 4.5) * 3600, estimated: true, note: '距離太近，建議步行' };
       sec += m.wait + 5 * 60; // 等車＋進出站步行
@@ -778,7 +783,7 @@
 
   /** Apple 地圖：d 開車、w 步行、r 大眾運輸、c 單車 */
   function appleDirUrl(a, b, mode) {
-    const f = { walk: 'w', bike: 'c', drive: 'd', transit: 'r' }[mode] || 'r';
+    const f = { walk: 'w', bike: 'c', drive: 'd', taxi: 'd', transit: 'r' }[mode] || 'r';
     return 'https://maps.apple.com/?saddr=' + a.lat + ',' + a.lng + '&daddr=' + b.lat + ',' + b.lng + '&dirflg=' + f;
   }
   function applePlaceUrl(p) {
@@ -1359,14 +1364,15 @@
       mb: t.members && (t.members.length > 1 || t.members[0] !== '我') ? t.members : undefined,
       ex: t.expenses && t.expenses.length ? t.expenses.map((e) => [e.title, e.amount, e.payer, e.split.length === t.members.length ? 0 : e.split, e.date || 0]) : undefined,
       m: packModes(t),
+      ln: packModes(t, t.legNotes),
     };
   }
-  function packModes(t) {
+  function packModes(t, src) {
     const idx = { base: 'b' };
     Object.keys(t.dayBase || {}).forEach((d) => { idx['base-' + d] = 'b' + d; });
     t.places.forEach((p, i) => { idx[p.id] = i; });
     const out = {};
-    for (const [k, v] of Object.entries(t.legModes || {})) {
+    for (const [k, v] of Object.entries(src || t.legModes || {})) {
       const [a, b] = k.split('>');
       if (idx[a] != null && idx[b] != null) out[idx[a] + '>' + idx[b]] = v;
     }
@@ -1390,11 +1396,10 @@
       idMap.push(id);
       return { id, name: a[0], lat: a[1], lng: a[2], day: a[3], order: a[4], note: a[5] || '', locked: !!a[6], stay: a[7] || 60, url: a[8] || '', cat: a[9] || '', hours: a[10] || '', cost: a[11] || 0, done: !!a[12], hoursWeek: a[13] || null, photo: a[14] ? { src: 'wiki', url: a[14][0], link: a[14][1] } : null, photoTry: a[14] ? 1 : 0, meal: a[15] || '' };
     });
-    t.legModes = {};
-    for (const [k, v] of Object.entries(o.m || {})) {
-      const [a, b] = k.split('>').map((x) => (x === 'b' ? 'base' : /^b\d+$/.test(x) ? 'base-' + x.slice(1) : idMap[+x]));
-      if (a && b) t.legModes[a + '>' + b] = v;
-    }
+    t.legModes = {}; t.legNotes = {};
+    const unk = (k) => k.split('>').map((x) => (x === 'b' ? 'base' : /^b\d+$/.test(x) ? 'base-' + x.slice(1) : idMap[+x]));
+    for (const [k, v] of Object.entries(o.m || {})) { const [a, b] = unk(k); if (a && b) t.legModes[a + '>' + b] = v; }
+    for (const [k, v] of Object.entries(o.ln || {})) { const [a, b] = unk(k); if (a && b) t.legNotes[a + '>' + b] = v; }
     return sanitizeTrip(t);
   }
 
