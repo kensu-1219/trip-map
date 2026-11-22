@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.16.0';
+  const VERSION = '1.17.0';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -202,7 +202,7 @@
       const m = L.marker([p.lat, p.lng], { icon: pinIcon(C.CAT_COLOR[p.cat] || C.CAT_COLOR.other, '', cls, catIc(p.cat)), title: p.name, zIndexOffset: dim(p) ? -100 : 0 });
       m.bindPopup(() => popupHtml(p), { maxWidth: 260 });
       if (!dim(p) && t.places.length <= 300) m.bindTooltip((num ? '<b style="--lc:' + dc(p.day) + '">' + num + '</b>' : '') + esc(p.name.length > 14 ? p.name.slice(0, 13) + '…' : p.name), { permanent: true, direction: 'right', offset: [16, -18], className: 'plabel' });
-      m.on('click', () => { if (S.ui.present) { const i = presentSeq(trip(), S.ui.present.day).findIndex((x) => x.p.id === p.id); if (i >= 0) presentGo(i, true); } else syncListTo(p.id); });
+      m.on('click', () => syncListTo(p.id));
       markers[p.id] = m;
       m.addTo(markerLayer);
     }
@@ -216,7 +216,17 @@
         .bindPopup(() => popupHtml(a)).addTo(markerLayer);
     }
     drawRoutes();
-    if (fit) fitTo(visible.length ? visible.concat(f ? [C.dayEnds(t, f).start, C.dayEnds(t, f).end].filter(Boolean) : hotels(t)) : allPoints(t));
+    if (fit) {
+      let pts = visible.length ? visible.concat(f ? [C.dayEnds(t, f).start, C.dayEnds(t, f).end].filter(Boolean) : hotels(t)) : allPoints(t);
+      if (f && visible.length) {
+        // 單天：連路線彎出去的部分也一起框進畫面
+        for (const [a, b] of dayLegs(t, f)) {
+          const c = legInfo(t, a, b).res.coords;
+          if (c && c.length > 2) for (let i = 0; i < c.length; i += Math.max(1, Math.floor(c.length / 12))) pts.push({ lat: c[i][0], lng: c[i][1] });
+        }
+      }
+      fitTo(pts);
+    }
   }
   /* ---------- 地圖 ⇄ 清單連動 ---------- */
   let hlId = '';
@@ -288,7 +298,7 @@
           const leg = legInfo(t, a, b);
           const real = !leg.res.estimated && leg.res.coords && leg.res.coords.length > 2;
           const coords = real ? leg.res.coords : arcCoords(a, b);
-          if (S.ui.present && coords.length) {
+          if (S.ui.dayFilter && coords.length) {
             const mid = coords[Math.floor(coords.length / 2)];
             L.marker(mid, { interactive: false, zIndexOffset: 800, icon: L.divIcon({ className: 'leg-badge-wrap', html: '<span class="leg-badge" style="--c:' + col + '">' + I(MODE_IC[leg.mode]) + C.fmtDur(leg.res.duration) + '</span>', iconSize: [0, 0] }) }).addTo(routeLayer);
           }
@@ -406,7 +416,7 @@
     return { key, mode, res, dist, auto: !t.legModes[key] };
   }
   let rT = null;
-  function scheduleRender() { clearTimeout(rT); rT = setTimeout(() => { renderPanel(true); drawRoutes(); }, 120); }
+  function scheduleRender() { clearTimeout(rT); rT = setTimeout(() => { if (S.ui.dragging) return scheduleRender(); renderPanel(true); drawRoutes(); }, 120); }
 
   function dayDate(t, d) {
     if (!t.startDate) return '';
@@ -480,11 +490,10 @@
   }
   function renderPlanBody(t, f, h) {
     h += todayCard(t);
-    h += sec('// Route · 每日路線') + '<div class="row gap route-bar"><div class="chips grow">' + '<button class="chip' + (f ? '' : ' on') + '" data-act="filter" data-d="0"><span class="en">ALL</span><span class="zh">全部</span></button>' +
+    const td = todayIndex(t);
+    h += sec('// Route · 每日路線') + '<div class="row gap route-bar"><div class="chips grow">' + (td ? '<button class="chip today' + (f === td ? ' on' : '') + '" data-act="filter" data-d="' + td + '" style="--c:' + dc(td) + '"><span class="en">TODAY</span><span class="zh">今天</span></button>' : '') + '<button class="chip' + (f ? '' : ' on') + '" data-act="filter" data-d="0"><span class="en">ALL</span><span class="zh">全部</span></button>' +
       range(t.days).map((d) => '<button class="chip' + (f === d ? ' on' : '') + '" data-act="filter" data-d="' + d + '" style="--c:' + dc(d) + '">' + (t.days > 5 ? '<span class="en">D' + d + '</span><span class="zh">第' + d + '天</span>' : '<span class="en">D' + String(d).padStart(2, '0') + '</span><span class="zh">第 ' + d + ' 天</span>') + '</button>').join('') + '</div>' +
       '<button class="btn sm' + (S.ui.reorder ? ' primary' : '') + '" data-act="reorder">' + I('swap') + (S.ui.reorder ? ' 完成' : ' 調整順序') + '</button></div>';
-    const pcost = t.places.reduce((a, p) => a + (p.cost || 0), 0), bcost = (t.bookings || []).reduce((a, b) => a + (b.cost || 0), 0);
-    if (pcost + bcost) h += '<div class="muted small">' + I('money') + ' 預估總花費 ' + (t.currency ? esc(t.currency) + ' ' : '') + fmtMoney(pcost + bcost) + (bcost ? '（含預訂 ' + fmtMoney(bcost) + '）' : '') + '</div>';
     const days = f ? [f] : range(t.days);
     const big = t.places.length > 120 && !f;
     S.ui.open = S.ui.open || {};
@@ -507,23 +516,24 @@
     const legs = dayLegs(t, d);
     let move = 0, dist = 0, est = false;
     const infos = legs.map(([a, b]) => { const li = legInfo(t, a, b); move += li.res.duration; dist += li.res.distance; est = est || li.res.estimated; return li; });
-    const stay = stops.reduce((s, p) => s + (p.stay || 0) * 60, 0);
     const ends = C.dayEnds(t, d), hasS = !!ends.start, hasE = !!ends.end;
     const st = C.dayStartTime(t, d);
-    const tl = C.timeline(st, infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), hasS, hasE);
+    const tl = C.timeline(st, infos.map((x) => x.res.duration), stops.map(stayOf), hasS, hasE);
     const late = d === t.days && C.departDeadline(t) != null && hasE && tl.end > C.departDeadline(t);
     const seq = stops.length ? (hasS ? [ends.start] : []).concat(stops, hasE ? [ends.end] : []) : stops;
     const mainMode = mostCommonMode(infos);
-    let h = '<div class="day" data-day="' + d + '"><div class="day-h" style="--c:' + dc(d) + '"><b>' + dayLabel(d) + '</b> <span>' + dayDate(t, d) + '</span>' +
+    const onlyThis = S.ui.dayFilter === d;
+    let h = '<div class="day" data-day="' + d + '"><div class="day-h" style="--c:' + dc(d) + '"><button class="day-pick" data-act="filter" data-d="' + (onlyThis ? 0 : d) + '" title="' + (onlyThis ? '回到全部天數' : '只看這天，地圖放大到這天的路線') + '"><b>' + dayLabel(d) + '</b> <span class="day-date">' + dayDate(t, d) + '</span>' + (onlyThis ? '' : ' <span class="day-go">' + I('next') + '</span>') + '</button>' +
       '<span class="day-tools">' + (seq.length >= 2 ? '<a class="btn sm ghost" target="_blank" rel="noopener" href="' + esc(C.gmapsDayUrl(seq, mainMode)) + '" title="整天路線在 Google 地圖開啟（Apple 地圖不支援多個中途點）">' + I('nav') + ' 整天導航</a>' : '') +
       '<button class="icon-btn sm ghost" data-act="dayMenu" data-d="' + d + '" title="清空或刪除這一天">' + I('trash') + '</button></span>' +
       weatherChip(t, d) +
-      '<span class="muted">' + stops.length + ' 站' + (stops.length ? ' · ' + C.hm(C.toMin(st)) + '–' + C.hm(tl.end) + ' · 移動 ' + (est ? '約 ' : '') + C.fmtDur(move) + ' · ' + C.fmtDist(dist) + ' · 停留 ' + C.fmtDur(stay) : '') +
+      '<span class="muted">' + stops.length + ' 站' + (stops.length ? ' · ' + C.hm(C.toMin(st)) + '–' + C.hm(tl.end) + ' · 移動 ' + (est ? '約 ' : '') + C.fmtDur(move) + ' · ' + C.fmtDist(dist) : '') +
       (late ? ' <b class="warn">· 趕不上飛機：' + C.hm(tl.end) + ' 才到機場，建議 ' + C.hm(C.departDeadline(t)) + ' 前到（起飛前 2 小時）</b>' : '') +
-      (dayCost(stops) ? ' · 花費 ' + (t.currency ? esc(t.currency) + ' ' : '') + fmtMoney(dayCost(stops)) : '') + '</span>' + dayBookings(t, d) + '</div>';
+      '</span>' + dayBookings(t, d) + '</div>';
     const fOut = d === 1 ? flightOutRows(t) : '', fRet = d === t.days ? flightRetRows(t) : '';
     h += fOut;
-    if (!stops.length) return h + '<div class="empty sm">這天沒有安排</div>' + fRet + '</div>';
+    const addBtn = '<button class="linkbtn add-day" data-act="addToDay" data-d="' + d + '">' + I('plus') + ' 加地點到這天</button>';
+    if (!stops.length) return h + '<div class="empty sm">這天沒有安排</div>' + addBtn + fRet + '</div>';
     let li = 0;
     const isAir = (x) => x && x.cat === 'airport' && (x === t.arrive || x === t.depart);
     if (hasS) h += baseRow(ends.start, C.hm(C.toMin(st)) + (isAir(ends.start) ? ' 出關' : ' 出發'), isAir(ends.start) ? (t.arriveTime ? t.arriveTime + ' 落地' : '抵達') : d > 1 && ends.end && ends.start !== ends.end ? '退房' : '') + legRow(t, infos[li++]);
@@ -532,8 +542,8 @@
       if (i < stops.length - 1 || hasE) h += legRow(t, infos[li++]);
     });
     if (hasE) h += isAir(ends.end) ? baseRow(ends.end, C.hm(tl.end) + ' 到機場', t.departTime ? t.departTime + ' 起飛' : '回程')
-      : baseRow(ends.end, C.hm(tl.end) + (ends.start && ends.start !== ends.end ? ' 入住' : ' 回到住宿'), '', d);
-    return h + fRet + '</div>';
+      : baseRow(ends.end, C.hm(tl.end) + (ends.start && ends.start !== ends.end ? ' 入住休息' : ' 回到住宿休息'), '', d);
+    return h + addBtn + fRet + '</div>';
   }
   /* ---------- 機票：出門、報到、航班 ---------- */
   const clock = (m) => (m < 0 ? '前一天 ' + C.hm(m + 1440) : m >= 1440 ? '隔天 ' + C.hm(m - 1440) : C.hm(m));
@@ -727,18 +737,20 @@
   const baseRow = (b, time, tag, d) => '<div class="stop base"><span class="num base">' + (b.cat === 'airport' ? catIc('airport') : I('hotel')) + '</span><span class="grow">' + esc(b.name) + (tag ? ' <small class="muted">' + tag + '</small>' : '') + '</span>' + (time ? '<span class="time">' + time + '</span>' : '') +
     (d ? '<button class="btn sm ghost" data-act="dayHotel" data-d="' + d + '" title="這天晚上住哪">' + I('hotel') + ' 今晚</button>' : '') + '</div>';
 
+  const isHotel = (p) => p.cat === 'hotel';
+  /** 旅宿當站點：到了就是休息，不算停留時間 */
+  const stayOf = (p) => (isHotel(p) ? 0 : p.stay || 0);
   function stopRow(t, p, unassigned, i, n, tm) {
     const reorder = S.ui.reorder && !unassigned;
     const hrs = C.hoursFor(p, dayISO(t, p.day));
     const warn = tm && hrs ? C.hoursWarning(hrs, tm.arrive, tm.depart) : null;
-    const cur = t.currency ? esc(t.currency) + ' ' : '';
     return '<div class="stop' + (p.done ? ' is-done' : '') + (reorder ? ' can-drag' : '') + '" data-id="' + p.id + '">' +
       (reorder ? '<span class="grip" title="按住拖曳排序">' + I('grip') + '</span>' : '') +
       '<span class="num" style="--c:' + dc(unassigned ? 0 : p.day) + '"><span>' + (unassigned ? '·' : p.order + 1) + '</span></span>' +
       thumb(p) +
       '<span class="grow"><a href="#" data-act="focus" data-id="' + p.id + '">' + esc(p.name) + '</a>' + (p.meal ? ' <span class="mealtag">' + (p.meal === 'lunch' ? '午餐' : '晚餐') + '</span>' : '') + (p.locked ? ' <span title="已鎖定在這天" class="muted">' + I('lock') + '</span>' : '') +
-      '<br>' + (tm ? '<span class="time">' + C.hm(tm.arrive) + '–' + C.hm(tm.depart) + '</span> ' : '') +
-      '<span class="muted">停留 ' + C.fmtDur((p.stay || 0) * 60) + (p.cost ? ' · ' + cur + fmtMoney(p.cost) : '') + (p.note ? ' · ' + esc(p.note.slice(0, 40)) : '') + '</span>' +
+      '<br>' + (tm ? '<span class="time">' + C.hm(tm.arrive) + (isHotel(p) ? ' 到旅宿休息' : ' 抵達') + '</span> ' : '') +
+      (p.note ? '<span class="muted">' + esc(p.note.slice(0, 40)) + '</span>' : '') +
       (warn ? '<br><span class="warnline">' + I('warn') + ' ' + esc(warn) + '</span>' : '') + '</span>' +
       (reorder ? '<button class="icon-btn sm updown" data-act="up" data-id="' + p.id + '"' + (i === 0 ? ' disabled' : '') + ' title="往前">' + I('up') + '</button>' +
         '<button class="icon-btn sm updown" data-act="down" data-id="' + p.id + '"' + (i === n - 1 ? ' disabled' : '') + ' title="往後">' + I('down') + '</button>' : '') +
@@ -816,97 +828,13 @@
         '<span class="line" style="--lc:' + esc(s.color || '#555') + '">' + stepIc(s.icon) + ' ' + esc(s.line) + '</span> ' + esc(s.from) + '→' + esc(s.to) + (s.stops ? '（' + s.stops + '站）' : '')).join(' › ') + '</div>';
     }
     const note = (t.legNotes || {})[li.key] || '';
-    const tag = r.estimated ? (r.note ? '估算・' + esc(r.note) : '估算') : r.source === 'google' ? 'Google' : '';
+    const tag = r.estimated && r.note ? esc(r.note) : '';
     return '<div class="leg">' +
       '<button class="leg-mode' + (li.auto ? ' auto' : '') + '" data-act="legEdit" data-key="' + esc(li.key) + '" title="改交通方式、加備註">' + I(MODE_IC[li.mode]) + '<span>' + C.MODES[li.mode].label + '</span></button>' +
-      '<div class="leg-info"><b>' + (r.estimated ? '約 ' : '') + C.fmtDur(r.duration) + '</b> · ' + C.fmtDist(r.distance) + (r.fare ? ' · <b>' + esc(C.fmtFare(r.fare)) + '</b>' : '') + (tag ? ' <span class="muted">' + tag + '</span>' : '') +
+      '<div class="leg-info"><span class="leg-t"><b>' + (r.estimated ? '約 ' : '') + C.fmtDur(r.duration) + '</b> · ' + C.fmtDist(r.distance) + (r.fare ? ' · <b>' + esc(C.fmtFare(r.fare)) + '</b>' : '') + '</span>' + (tag ? '<div class="muted small">' + tag + '</div>' : '') +
       (note ? '<div class="leg-note">' + I('edit') + ' ' + esc(note) + '</div>' : '') + detail + '</div>' +
       (a && b ? navA(a, b, li.mode, 'icon-btn sm ghost', I('nav'), '導航') : '') +
       '</div>';
-  }
-
-  /* ---------- 展示模式：右側天數條＋下方站點卡片＋地圖上標交通方式 ---------- */
-  let presentTimer = null;
-  function togglePresent() {
-    const t = trip();
-    if (S.ui.present) {
-      clearInterval(presentTimer); presentTimer = null;
-      const prev = S.ui.present.prev;
-      S.ui.present = null; document.body.classList.remove('presenting');
-      const ui = $('#presentUI'); if (ui) ui.remove();
-      S.ui.dayFilter = prev.dayFilter;
-      document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === S.ui.tab));
-      if (isMobile()) setSheet(prev.sheet || 'half');
-      renderMap(true); return;
-    }
-    const d = S.ui.dayFilter || todayIndex(t) || (t.places.some((p) => p.day === 1) ? 1 : (t.places.find((p) => p.day) || {}).day || 1);
-    S.ui.present = { day: d, idx: -1, playing: false, prev: { dayFilter: S.ui.dayFilter, sheet: S.data.flags.sheet } };
-    document.body.classList.add('presenting');
-    document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === 'present'));
-    if (isMobile()) setSheet('mini');
-    presentDay(d);
-  }
-  function presentSeq(t, d) {
-    const legs = dayLegs(t, d);
-    if (!legs.length) return C.dayStops(t, d).map((p) => ({ p, leg: null }));
-    const seq = legs.map(([a, b]) => ({ p: a, leg: legInfo(t, a, b) }));
-    seq.push({ p: legs[legs.length - 1][1], leg: null });
-    return seq;
-  }
-  function presentDay(d) {
-    const t = trip(); const P = S.ui.present; if (!P) return;
-    clearInterval(presentTimer); presentTimer = null; P.playing = false;
-    P.day = Math.max(1, Math.min(t.days, d)); P.idx = -1;
-    S.ui.dayFilter = P.day;
-    renderPresentUI(); renderMap(true);
-  }
-  function renderPresentUI() {
-    const t = trip(); const P = S.ui.present; if (!P) return;
-    let ui = $('#presentUI');
-    if (!ui) { ui = document.createElement('div'); ui.id = 'presentUI'; document.body.appendChild(ui); }
-    const seq = presentSeq(t, P.day);
-    const stops = C.dayStops(t, P.day);
-    const ends = C.dayEnds(t, P.day);
-    const tl = C.timeline(C.dayStartTime(t, P.day), seq.filter((x) => x.leg).map((x) => x.leg.res.duration), stops.map((p) => p.stay || 0), !!ends.start && stops.length > 0, !!ends.end && stops.length > 0);
-    const moveSec = seq.reduce((a, x) => a + (x.leg ? x.leg.res.duration : 0), 0);
-    const date = dayDate(t, P.day);
-    let si = 0;
-    const cards = seq.map((x, i) => {
-      const isStop = stops.includes(x.p);
-      const time = isStop && tl.stops[si] ? C.hm(tl.stops[si].arrive) : '';
-      if (isStop) si++;
-      const ic = isStop ? catIc(x.p.cat) : x.p.cat === 'airport' ? catIc('airport') : I('hotel');
-      const leg = x.leg ? '<div class="pc-leg">' + I(MODE_IC[x.leg.mode]) + ' ' + C.MODES[x.leg.mode].label + ' ' + (x.leg.res.estimated ? '約' : '') + C.fmtDur(x.leg.res.duration) +
-        ((t.legNotes || {})[x.leg.key] ? '<small>' + esc(t.legNotes[x.leg.key]) + '</small>' : '') + '</div>' : '';
-      return '<button class="pcard' + (i === P.idx ? ' on' : '') + '" data-act="pGo" data-i="' + i + '" style="--c:' + dc(P.day) + '"><span class="pc-top"><span class="pc-n">' + (isStop ? x.p.order + 1 : '') + '</span>' + ic + (time ? '<span class="pc-time">' + time + '</span>' : '') + '</span>' +
-        '<b>' + esc(x.p.name) + '</b>' + leg + '</button>';
-    }).join('');
-    ui.innerHTML = '<div id="pRail">' + '<button class="pr-x" data-act="present" title="離開展示">' + I('close') + '</button>' +
-      range(t.days).map((d) => '<button class="pr-d' + (d === P.day ? ' on' : '') + '" data-act="pDay" data-d="' + d + '" style="--c:' + dc(d) + '"><b>D' + d + '</b><small>' + C.dayStops(t, d).length + '站</small></button>').join('') + '</div>' +
-      '<div id="pCards"><div class="pcard sum" style="--c:' + dc(P.day) + '"><b>第 ' + P.day + ' 天' + (date ? ' · ' + esc(date) : '') + '</b><small>' + stops.length + ' 站 · 移動 ' + C.fmtDur(moveSec) + (stops.length ? ' · ' + C.hm(C.toMin(C.dayStartTime(t, P.day))) + '–' + C.hm(tl.end) : '') + '</small>' +
-      (seq.length > 1 ? '<span class="pc-play" data-act="pPlay" role="button">' + I(P.playing ? 'pause' : 'play') + (P.playing ? ' 暫停' : ' 播放') + '</span>' : '') + '</div>' + (cards || '<div class="pcard sum"><small>這天沒有安排</small></div>') + '</div>';
-  }
-  function presentGo(i, user) {
-    const t = trip(); const P = S.ui.present; if (!P) return;
-    if (user && P.playing) { clearInterval(presentTimer); presentTimer = null; P.playing = false; }
-    const seq = presentSeq(t, P.day); const x = seq[i]; if (!x) return;
-    P.idx = i;
-    map.flyTo([x.p.lat, x.p.lng], Math.max(map.getZoom(), 15), { duration: 0.8 });
-    if (markers[x.p.id]) highlightMarker(x.p.id, false);
-    renderPresentUI();
-    const c = document.querySelector('#pCards .pcard[data-i="' + i + '"]'); if (c) c.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-  }
-  function presentPlay() {
-    const t = trip(); const P = S.ui.present; if (!P) return;
-    if (P.playing) { clearInterval(presentTimer); presentTimer = null; P.playing = false; renderPresentUI(); return; }
-    const n = presentSeq(t, P.day).length; if (!n) return;
-    P.playing = true;
-    presentGo(P.idx >= 0 && P.idx < n - 1 ? P.idx + 1 : 0);
-    presentTimer = setInterval(() => {
-      const Q = S.ui.present; if (!Q || !Q.playing) { clearInterval(presentTimer); return; }
-      if (Q.idx >= n - 1) { clearInterval(presentTimer); presentTimer = null; Q.playing = false; renderPresentUI(); renderMap(true); return; }
-      presentGo(Q.idx + 1);
-    }, 3200);
   }
 
   /** 這段怎麼移動：選方式（含計程車）＋備註 */
@@ -963,7 +891,7 @@
   const optRow = (act, ic, title, sub, extra) => '<button class="opt-row" data-act="' + act + '"' + (extra || '') + '><span class="opt-ic">' + ic + '</span><span class="opt-t"><b>' + title + '</b><small>' + sub + '</small></span><span class="opt-go">' + I('next') + '</span></button>';
   function renderAdd() {
     const geo = S.ui.geo;
-    let h = sec('// Add · 新增地點') +
+    let h = sec('// Add · 新增地點') + (S.ui.addDay ? '<div class="msg add-day-banner" style="--c:' + dc(S.ui.addDay) + '">要加到 <b>第 ' + S.ui.addDay + ' 天</b> 的最後，加完自動回行程。<button class="linkbtn" data-act="addDayCancel">改成只加到清單</button></div>' : '') +
       '<div class="add-box"><textarea id="addInput" rows="1" placeholder="地名、Google Maps 連結或座標"></textarea>' +
       '<button class="btn primary" data-act="addGo">' + I('search') + ' 搜尋</button></div>' +
       '<div class="add-tools"><button class="linkbtn" data-act="pickAdd">' + I('map') + ' 在地圖上點一下新增</button><span class="muted small">可一次貼多行</span></div>';
@@ -1297,7 +1225,7 @@
       const stops = C.dayStops(t, d); if (!stops.length) continue;
       const infos = dayLegs(t, d).map(([a, b]) => legInfo(t, a, b));
       const e0 = C.dayEnds(t, d);
-      const tl = C.timeline(C.dayStartTime(t, d), infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), !!e0.start, !!e0.end);
+      const tl = C.timeline(C.dayStartTime(t, d), infos.map((x) => x.res.duration), stops.map(stayOf), !!e0.start, !!e0.end);
       stops.forEach((p, i) => events.push({
         date: dayISO(t, d), start: tl.stops[i].arrive, end: tl.stops[i].depart, uid: t.id + '-' + p.id,
         title: 'D' + d + ' ' + C.CATS[p.cat].emoji + ' ' + p.name, location: p.address || p.name, lat: p.lat, lng: p.lng,
@@ -1435,11 +1363,10 @@
   };
   function renderList() {
     const t = trip();
-    const seg = S.ui.listSeg || 'book';
-    const done = (t.checklist || []).filter((c) => c.done).length;
-    const bar = '<div class="segbar">' + [['book', I('ticket') + ' 預訂 ' + (t.bookings.length || '')], ['split', I('users') + ' 分帳'], ['pack', I('list') + ' 行李 ' + (t.checklist.length ? done + '/' + t.checklist.length : '')]]
+    const seg = S.ui.listSeg === 'split' ? 'split' : 'book';
+    const bar = '<div class="segbar">' + [['book', I('ticket') + ' 預訂 ' + (t.bookings.length || '')], ['split', I('users') + ' 分帳']]
       .map(([k, l]) => '<button class="' + (seg === k ? 'on' : '') + '" data-act="listSeg" data-k="' + k + '">' + l + '</button>').join('') + '</div>';
-    return bar + (seg === 'book' ? renderBookings() : seg === 'split' ? renderSplit() : renderPack());
+    return bar + (seg === 'book' ? renderBookings() : renderSplit());
   }
   function renderPack() {
     const t = trip();
@@ -1542,6 +1469,15 @@
     const t = trip();
     const r = C.mergePlaces(t.places, list);
     t.places = r.places;
+    const toDay = S.ui.addDay && S.ui.addDay <= t.days ? S.ui.addDay : 0;
+    if (toDay && r.added.length) {
+      let n = C.dayStops(t, toDay).filter((p) => !r.added.includes(p)).length;
+      r.added.forEach((p) => { p.day = toDay; p.order = n++; p.locked = true; });
+      S.ui.addDay = 0; S.ui.dayFilter = toDay;
+      save(); switchTab('plan'); renderMap(true);
+      toast('已加到第 ' + toDay + ' 天');
+      return r;
+    }
     save(); renderAll();
     if (!opts || !opts.silent) {
       if (r.added.length) toast('已加入 ' + r.added.length + ' 個地點' + (r.dup.length ? '（' + r.dup.length + ' 個重複略過）' : ''));
@@ -1717,10 +1653,7 @@
       '<label class="lbl">備註</label><textarea id="eNote" rows="3">' + esc(p.note) + '</textarea>' +
       '<div class="row gap"><label class="field grow">' + I('clock') + ' 營業時間<input id="eHours" placeholder="' + (p.hoursWeek ? '留空＝用下方每週時間' : '10:00-18:00') + '" value="' + esc(p.hours) + '"></label></div>' +
       (p.hoursWeek ? '<div class="muted small">每週：' + esc(C.weekSummary(p.hoursWeek)) + '（自動帶入；上面填了就以上面為準）</div>' : '') +
-      '<div class="row gap" style="margin-top:8px"><label class="field grow">' + I('money') + ' 預估花費<input id="eCost" type="number" min="0" step="1" inputmode="decimal" value="' + (p.cost || '') + '" placeholder="0"></label><span class="muted">' + esc(t.currency || '') + '</span></div>' +
-      '<div class="row gap"><label class="field">停留（分鐘）<input id="eStay" type="number" min="0" max="1440" step="15" value="' + p.stay + '"></label>' +
-      '<label class="field">天數 <select id="eDay"><option value="0">未排</option>' + range(t.days).map((d) => '<option value="' + d + '"' + (p.day === d ? ' selected' : '') + '>Day ' + d + '</option>').join('') + '</select></label></div>' +
-      '<label class="field">用餐 <select id="eMeal"><option value="">不是用餐</option><option value="lunch"' + (p.meal === 'lunch' ? ' selected' : '') + '>午餐</option><option value="dinner"' + (p.meal === 'dinner' ? ' selected' : '') + '>晚餐</option></select></label>' +
+      '<label class="field" style="margin-top:8px">用餐 <select id="eMeal"><option value="">不是用餐</option><option value="lunch"' + (p.meal === 'lunch' ? ' selected' : '') + '>午餐</option><option value="dinner"' + (p.meal === 'dinner' ? ' selected' : '') + '>晚餐</option></select></label>' +
       '<label class="check"><input type="checkbox" id="eLock"' + (p.locked ? ' checked' : '') + '> 鎖定在這天（自動排行程不會移動）</label>' +
       '<label class="check"><input type="checkbox" id="eDone"' + (p.done ? ' checked' : '') + '> 已去過（打卡）</label>' +
       '<div class="muted small">座標 ' + p.lat.toFixed(6) + ', ' + p.lng.toFixed(6) + '</div>' +
@@ -1728,15 +1661,11 @@
       ok: () => {
         p.name = $('#eName').value.trim().slice(0, 200) || p.name;
         p.note = $('#eNote').value.slice(0, 2000);
-        p.stay = Math.max(0, Math.min(1440, parseInt($('#eStay').value, 10) || 0));
-        const nd = parseInt($('#eDay').value, 10) || 0;
-        if (nd !== p.day) { p.day = nd; p.order = 999; for (let k = 1; k <= t.days; k++) C.dayStops(t, k).forEach((s, i) => { s.order = i; }); }
         p.locked = $('#eLock').checked && p.day > 0;
         p.done = $('#eDone').checked;
         p.meal = $('#eMeal').value === 'lunch' || $('#eMeal').value === 'dinner' ? $('#eMeal').value : '';
         const sel = $('#eCat .catopt.on'); if (sel) p.cat = sel.dataset.cat;
         p.hours = $('#eHours').value.trim().slice(0, 60);
-        const cst = parseFloat($('#eCost').value); p.cost = Number.isFinite(cst) && cst > 0 ? cst : 0;
         closeModal(); save(); renderAll();
       },
       del: () => {
@@ -1907,7 +1836,7 @@
       if (!stops.length) continue;
       const infos = dayLegs(t, d).map(([a, b]) => legInfo(t, a, b));
       const e0 = C.dayEnds(t, d), hb = !!e0.start, he = !!e0.end;
-      const tl = C.timeline(C.dayStartTime(t, d), infos.map((x) => x.res.duration), stops.map((p) => p.stay || 0), hb, he);
+      const tl = C.timeline(C.dayStartTime(t, d), infos.map((x) => x.res.duration), stops.map(stayOf), hb, he);
       lines.push('', '【Day ' + d + (dayDate(t, d) ? ' ' + dayDate(t, d) : '') + '】');
       let li = 0;
       const legTxt = (x) => '   ↓ ' + C.MODES[x.mode].icon + ' ' + (x.res.estimated ? '約' : '') + C.fmtDur(x.res.duration) + '（' + C.fmtDist(x.res.distance) + '）' + ((t.legNotes || {})[x.key] ? ' ' + t.legNotes[x.key] : '');
@@ -2151,7 +2080,7 @@
       const row = g.closest('.stop'); const day = row.closest('.day');
       const rows = [...day.querySelectorAll('.stop.can-drag')];
       dg = { row, rows, id: row.dataset.id, y0: e.clientY, s0: body.scrollTop, rects: rows.map((r) => r.getBoundingClientRect()), from: rows.indexOf(row), to: rows.indexOf(row), pid: e.pointerId };
-      row.classList.add('dragging');
+      row.classList.add('dragging'); S.ui.dragging = true;
       try { g.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ }
       e.preventDefault();
     });
@@ -2173,11 +2102,16 @@
       dg.rects.forEach((r, i) => { if (i !== dg.from && r.top + r.height / 2 < mid) to++; });
       dg.to = to; mark();
       // 靠近邊緣自動捲動
-      const br = body.getBoundingClientRect();
-      if (e.clientY < br.top + 40) body.scrollTop -= 12; else if (e.clientY > br.bottom - 40) body.scrollTop += 12;
+      // 只在手指往邊緣移動時捲，上緣要扣掉黏在上面的分頁列
+      const br = body.getBoundingClientRect(), tb = $('#tabs').getBoundingClientRect();
+      const top = Math.max(br.top, tb.bottom <= br.top + 80 ? tb.bottom : br.top);
+      const goingUp = e.clientY < (dg.lastY == null ? e.clientY + 1 : dg.lastY), goingDown = e.clientY > (dg.lastY == null ? e.clientY - 1 : dg.lastY);
+      dg.lastY = e.clientY;
+      if (goingUp && e.clientY < top + 36) body.scrollTop -= 12; else if (goingDown && e.clientY > br.bottom - 40) body.scrollTop += 12;
       e.preventDefault();
     }, { passive: false });
     const end = () => {
+      S.ui.dragging = false;
       if (!dg) return;
       const { from, to, id } = dg;
       dg.row.style.transform = ''; dg.row.classList.remove('dragging');
@@ -2207,7 +2141,7 @@
     applyTheme(); renderTripSelect(); renderPanel(true); renderMap(!!fit); updateBadge(); }
 
   function bind() {
-    $('#tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (!b) return; if (b.dataset.tab === 'present') togglePresent(); else { if (S.ui.present) togglePresent(); switchTab(b.dataset.tab); } });
+    $('#tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (!b) return; switchTab(b.dataset.tab); });
     $('#sheetHandle').addEventListener('click', () => {
       const p = $('#panel');
       if (p._justDragged && Date.now() - p._justDragged < 350) return;
@@ -2250,7 +2184,11 @@
       if (act === 'focus') { e.preventDefault(); }
       switch (act) {
         case 'days': t.days = Math.max(1, Math.min(60, t.days + +el.dataset.d)); if (S.ui.dayFilter > t.days) S.ui.dayFilter = 0; save(); renderAll(); break;
-        case 'filter': S.ui.dayFilter = +el.dataset.d; renderPanel(true); renderMap(true); break;
+        case 'filter': {
+          S.ui.dayFilter = +el.dataset.d; renderPanel(true); renderMap(true);
+          if (el.classList.contains('day-pick')) { const dy = document.querySelector('.day[data-day="' + S.ui.dayFilter + '"]'); if (dy) dy.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+          break;
+        }
         case 'autoplan': autoplan(); break;
         case 'restorePlan': restorePlan(); break;
         case 'setHome': setHomeModal(); break;
@@ -2268,10 +2206,8 @@
         case 'focus': { const p = findPoint(t, id); if (p) { if (window.innerWidth < 900) setSheet('peek'); setTimeout(() => { map.setView([p.lat, p.lng], Math.max(map.getZoom(), 15)); markerLayer.eachLayer((m) => { if (m.options.title === p.name) m.openPopup(); }); }, 280); } break; }
         case 'mode': t.legModes[el.dataset.key] = el.dataset.mode; save(); renderPanel(true); renderMap(false); break;
         case 'legEdit': legEditModal(el.dataset.key); break;
-        case 'present': togglePresent(); break;
-        case 'pDay': presentDay(+el.dataset.d); break;
-        case 'pGo': presentGo(+el.dataset.i, true); break;
-        case 'pPlay': presentPlay(); break;
+        case 'addToDay': S.ui.addDay = +el.dataset.d; S.ui.results = null; S.ui.addMsg = ''; switchTab('add'); setTimeout(() => { const ai = $('#addInput'); if (ai) ai.focus(); }, 60); break;
+        case 'addDayCancel': S.ui.addDay = 0; renderPanel(true); break;
         case 'measureOpen': switchTab('measure'); break;
         case 'measureBack': switchTab('places'); break;
         case 'addGo': handleAddInput(); break;
@@ -2375,6 +2311,12 @@
           ok: () => { S.data.trips.push(t); S.data.current = t.id; closeModal(); save(); renderAll(true); toast('已加入「' + t.name + '」'); },
         });
       } catch (e) { history.replaceState(null, '', baseUrl()); modalMsg('分享連結壞掉了', '可能被通訊軟體截斷。請對方改傳備份檔。'); }
+    } else if (params.get('add') || params.get('text') || params.get('url')) {
+      // 外部一鍵加入：iOS 捷徑、書籤按鈕、Android 分享都會帶 ?add=（或 text/url）
+      const txt = [params.get('add'), params.get('text'), params.get('url')].filter(Boolean).join('\n').slice(0, 4000);
+      history.replaceState(null, '', baseUrl());
+      switchTab('add');
+      setTimeout(() => { const ai = $('#addInput'); if (ai) { ai.value = txt; handleAddInput(); } }, 50);
     } else if (params.get('join')) {
       const id = params.get('join');
       let cfg = null;

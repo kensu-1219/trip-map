@@ -294,14 +294,14 @@ with sync_playwright() as p:
 
     # 8) 量距離（無 Google 金鑰）
     page.click('#tabs button[data-tab=places]')
-    check('量距離分頁已移除、改成「展示」', page.locator('#tabs button[data-tab=measure]').count() == 0 and page.locator('#tabs button[data-tab=present]').count() == 1)
+    check('量距離分頁已移除，底部只剩 4 個分頁', page.locator('#tabs button[data-tab=measure]').count() == 0 and page.locator('#tabs button').count() == 4)
     page.click('[data-act=measureOpen]')
     ids = page.evaluate("(()=>{const t=TripApp.trip();return [t.places.find(p=>p.name=='淺草寺').id,t.places.find(p=>p.name=='上野公園').id]})()")
     page.select_option('#mA', ids[0]); page.select_option('#mB', ids[1])
     page.wait_for_timeout(1500)
     mt = page.inner_text('#tabBody')
     check('量距離：四種交通方式都有結果', all(k in mt for k in ['步行', '單車', '開車', '大眾運輸']) and '直線距離' in mt)
-    check('無金鑰時大眾運輸標示「估算」', '估算' in mt)
+    check('無金鑰時大眾運輸標示「約」', '約' in mt)
     page.screenshot(path=f'{OUT}/09_measure.png')
 
     # 9) 填 Google 金鑰 → 大眾運輸實際轉乘
@@ -315,20 +315,27 @@ with sync_playwright() as p:
     check('顯示票價 ¥210', '¥210' in mt)
     page.screenshot(path=f'{OUT}/10_measure_google_transit.png')
 
-    # 9b) 展示模式
-    page.click('#tabs button[data-tab=present]'); page.wait_for_timeout(900)
-    check('展示：右側天數條', page.locator('#pRail .pr-d').count() == page.evaluate('TripApp.trip().days'))
-    page.click('#pRail .pr-d[data-d="2"]'); page.wait_for_timeout(900)
-    check('展示：點 D2 只顯示該天並有站點卡片', page.evaluate('TripApp.S.ui.dayFilter') == 2 and page.locator('#pCards .pcard[data-i]').count() >= 2)
-    check('展示：地圖上每段標交通方式與時間', page.locator('.leg-badge').count() >= 1)
-    check('展示：卡片帶出備註', '沿隅田川騎' in page.inner_text('#pCards') or page.evaluate("Object.keys(TripApp.trip().legNotes).length") >= 1)
-    page.screenshot(path=f'{OUT}/09c_present.png')
-    page.click('#pCards .pcard[data-i="1"]'); page.wait_for_timeout(1000)
-    check('展示：點卡片飛到該站', page.locator('#pCards .pcard.on').count() == 1)
-    page.click('[data-act=pPlay]'); page.wait_for_timeout(3600)
-    check('展示：播放自動前進', page.evaluate('TripApp.S.ui.present.idx') >= 1 and page.evaluate('TripApp.S.ui.present.playing') in (True, False))
-    page.click('#pRail .pr-x'); page.wait_for_timeout(500)
-    check('離開展示後恢復', page.locator('#presentUI').count() == 0 and page.locator('.leg-badge').count() == 0)
+    # 9b) 點天數標題：只看那天、地圖框住當天路線、每段標交通方式
+    page.click('#tabs button[data-tab=plan]'); page.wait_for_timeout(300)
+    page.click('[data-act=filter][data-d="0"]'); page.wait_for_timeout(300)
+    page.click('.day[data-day="2"] .day-pick'); page.wait_for_timeout(900)
+    check('點「第 2 天」標題 → 只看第 2 天', page.evaluate('TripApp.S.ui.dayFilter') == 2 and page.locator('.day').count() == 1)
+    inview = page.evaluate("(()=>{const m=TripApp.map,b=m.getBounds();return TripApp.C.dayStops(TripApp.trip(),2).every(p=>b.contains([p.lat,p.lng]))})()")
+    check('地圖縮放到容納當天所有地點', inview)
+    check('單天時地圖每段標交通方式與時間', page.locator('.leg-badge').count() >= 1)
+    page.screenshot(path=f'{OUT}/09c_day_focus.png')
+    hdr = page.locator('.day[data-day="2"] .day-pick').bounding_box(); dt = page.locator('.day[data-day="2"] .day-date').bounding_box(); bb = page.locator('.day[data-day="2"] .day-pick b').bounding_box()
+    check('日期和「第 2 天」在同一條線上', abs((dt['y'] + dt['height'] / 2) - (bb['y'] + bb['height'] / 2)) <= 3, f"{dt['y']:.0f}/{bb['y']:.0f}")
+    lt_h = page.locator('.leg .leg-t').first.bounding_box()['height']
+    check('每段的時間與距離不換行', lt_h < 26, f'{lt_h:.0f}px')
+    # 加地點到這天
+    n2 = page.evaluate('TripApp.C.dayStops(TripApp.trip(),2).length')
+    page.click('.day[data-day="2"] [data-act=addToDay]'); page.wait_for_timeout(300)
+    check('「加地點到這天」切到新增並顯示要加到第 2 天', '第 2 天' in page.inner_text('#tabBody'))
+    page.fill('#addInput', '35.6852,139.7528'); page.click('[data-act=addGo]'); page.wait_for_timeout(600)
+    check('加完回到行程、排在第 2 天最後並鎖定', page.evaluate('TripApp.S.ui.tab') == 'plan' and page.evaluate('(()=>{const s=TripApp.C.dayStops(TripApp.trip(),2);const l=s[s.length-1];return s.length})()') == n2 + 1 and page.evaluate('(()=>{const s=TripApp.C.dayStops(TripApp.trip(),2);return s[s.length-1].locked})()'))
+    page.click('.day[data-day="2"] .day-pick'); page.wait_for_timeout(300)
+    check('再點一次標題回到全部天數', page.evaluate('TripApp.S.ui.dayFilter') == 0)
 
     # 10) 分享連結往返
     page.click('#btnShare'); page.wait_for_selector('#shareLink')
@@ -344,6 +351,15 @@ with sync_playwright() as p:
     n2 = page2.evaluate('TripApp.trip().places.length'); n1 = page.evaluate('TripApp.trip().places.length')
     check('另一台裝置開分享連結 → 匯入同樣地點與分天', n2 == n1 and page2.evaluate('TripApp.trip().base.name') == '一蘭 拉麵 新宿店', f'{n2}/{n1}')
     check('分享連結帶上每段備註', page2.evaluate("Object.values(TripApp.trip().legNotes).join()") == page.evaluate("Object.values(TripApp.trip().legNotes).join()") != '')
+    # 外部一鍵加入（iOS 捷徑／書籤按鈕會開 ?add=）
+    import urllib.parse as _up
+    page2.goto(BASE + '?add=' + _up.quote('https://www.google.com/maps/place/%E6%9D%B1%E4%BA%AC%E9%A7%85/@35.6812,139.7671,17z'))
+    page2.wait_for_timeout(1200)
+    check('?add= 連結一開就加進目前行程', page2.evaluate("TripApp.trip().places.some(p=>p.name.includes('東京駅'))") and '?add' not in page2.url)
+    # 旅宿當站點：到了就休息
+    page2.evaluate("(()=>{const t=TripApp.trip();const p=t.places.find(p=>p.name.includes('東京駅'));p.cat='hotel';p.day=1;p.order=99;TripApp.renderAll()})()"); page2.wait_for_timeout(400)
+    page2.click('#tabs button[data-tab=plan]'); page2.wait_for_timeout(300)
+    check('旅宿站點顯示「到旅宿休息」', '到旅宿休息' in page2.inner_text('#tabBody'))
     page2.context.close()
 
     # 11) 重新整理後資料還在
@@ -424,26 +440,24 @@ with sync_playwright() as p:
     check('營業時間衝突警告（太早到）', vp.locator('.warnline').count() >= 1, vp.locator('.warnline').first.inner_text() if vp.locator('.warnline').count() else '')
     open_setup(vp)
     vp.fill('#dayStart', '09:00'); vp.dispatch_event('#dayStart', 'change'); vp.wait_for_timeout(200)
-    check('預估總花費顯示', '預估總花費 ¥' in vp.inner_text('#tabBody'))
+    check('行程頁不再顯示停留與花費', '停留' not in vp.inner_text('#tabBody') and '預估總花費' not in vp.inner_text('#tabBody'))
     first = vp.evaluate('TripApp.C.dayStops(TripApp.trip(),1)[0].id')
     vp.click(f'.stop[data-id="{first}"] [data-act=toggleDone]'); vp.wait_for_timeout(200)
     check('打卡：標記已去過、地圖標記變灰', vp.evaluate(f'TripApp.trip().places.find(p=>p.id=="{first}").done') and vp.locator('.pin.done').count() == 1)
     vp.screenshot(path=f'{OUT}/19_categories_done.png')
     # 編輯分類
-    vp.click(f'.stop[data-id="{first}"] [data-act=edit]'); vp.click('.catopt[data-cat=food]'); vp.click('[data-mact=ok]'); vp.wait_for_timeout(150)
+    vp.click(f'.stop[data-id="{first}"] [data-act=edit]')
+    check('編輯地點沒有花費、天數、停留欄位', vp.locator('#eCost, #eDay, #eStay').count() == 0)
+    vp.click('.catopt[data-cat=food]'); vp.click('[data-mact=ok]'); vp.wait_for_timeout(150)
     check('編輯時可改分類', vp.evaluate(f'TripApp.trip().places.find(p=>p.id=="{first}").cat') == 'food')
     # 地點分頁分類篩選
     vp.click('#tabs button[data-tab=places]'); vp.click('[data-act=catFilter][data-c=temple]'); vp.wait_for_timeout(150)
     n_t = vp.locator('#tabBody .stop').count()
     check('地點分頁可依分類篩選', n_t == sum(1 for v in vp.evaluate('TripApp.trip().places.map(p=>p.cat)') if v == 'temple') and n_t >= 1, f'{n_t} 個')
     vp.screenshot(path=f'{OUT}/20_places_filter.png')
-    # 清單
-    vp.click('#tabs button[data-tab=list]'); vp.click('[data-act=listSeg][data-k=pack]'); vp.click('[data-act=clTemplate]'); vp.wait_for_timeout(150)
-    nCl = vp.evaluate('TripApp.trip().checklist.length')
-    vp.fill('#clInput', '日幣零錢包'); vp.fill('#clGroup', '金錢'); vp.press('#clInput', 'Enter'); vp.wait_for_timeout(150)
-    vp.locator('[data-act=clToggle]').first.click(); vp.wait_for_timeout(100)
-    check('行前清單：載入範本、新增、勾選', nCl >= 15 and vp.evaluate('TripApp.trip().checklist.length') == nCl + 1 and vp.evaluate('TripApp.trip().checklist[0].done'))
-    vp.screenshot(path=f'{OUT}/21_checklist.png')
+    # 清單：沒有行李
+    vp.click('#tabs button[data-tab=list]'); vp.wait_for_timeout(150)
+    check('清單只剩預訂、分帳（行李拿掉）', vp.locator('[data-act=listSeg]').count() == 2 and '行李' not in vp.inner_text('.segbar'))
     # 主題切換（每趟旅程）
     vp.click('#btnSettings'); vp.click('.themeopt[data-theme=neon]'); vp.wait_for_timeout(150)
     check('主題預覽即時套用', vp.evaluate('document.documentElement.dataset.theme') == 'neon')
@@ -629,7 +643,8 @@ with sync_playwright() as p:
     vp.screenshot(path=f'{OUT}/35_bookings.png')
     vp.click('#tabs button[data-tab=plan]'); vp.wait_for_timeout(300)
     check('預訂出現在當天行程', vp.locator('.bkchip').count() == 2 and '入住 新宿華盛頓飯店' in vp.inner_text('#tabBody'))
-    check('總花費含預訂', '含預訂 12,000' in vp.inner_text('#tabBody'))
+    vp.click('[data-act=filter][data-d="0"]'); vp.wait_for_timeout(200)
+    check('今天在旅程中 → 出現「今天」按鈕', vp.locator('.chip.today').count() == 1 or not vp.evaluate('!!TripApp.trip().startDate'))
     vp.click('#tabs button[data-tab=list]'); vp.click('[data-act=listSeg][data-k=split]'); vp.wait_for_timeout(150)
     for nm in ['Amy', 'Bob']:
         vp.fill('#memInput', nm); vp.press('#memInput', 'Enter'); vp.wait_for_timeout(100)
