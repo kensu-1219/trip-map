@@ -794,3 +794,30 @@ html[data-theme="nier"] .leg-badge { border-radius: 0; }
 .add-day { margin: 6px 0 2px 38px; }
 .add-day-banner { border-left: 4px solid var(--c); display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
 .chip.today { font-weight: 700; }
+
+/* ---------- v1.18：精簡與配色 ---------- */
+.pop-grid { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); }
+/* 天數標題：日期與「第 N 天」同一條基線、同字體 */
+.day-pick { align-items: baseline; gap: 10px; }
+.day-pick b { line-height: 1.2; }
+.day-pick .day-date { font: 600 13px var(--mono); color: var(--ink-soft); line-height: 1.2; letter-spacing: .02em; }
+html[data-style="modern"] .day-pick .day-date { font-family: var(--sans); }
+.day-h .day-tools { align-self: center; }
+/* 下拉選單、捲軸跟著主題配色 */
+html { color-scheme: light; }
+html[data-theme="night"], html[data-theme="neon"] { color-scheme: dark; }
+select { color: var(--ink); background-color: var(--card); }
+select option, select optgroup { color: var(--ink); background-color: var(--card); }
+#tripSelect { background-color: transparent; }
+#tripSelect option { background-color: var(--card); color: var(--ink); }
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--ink) 28%, transparent) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--ink) 25%, transparent); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--ink) 45%, transparent); }
+html[data-theme="nier"] ::-webkit-scrollbar-thumb, html[data-theme="relic"] ::-webkit-scrollbar-thumb { border-radius: 0; }
+html[data-theme="neon"] ::-webkit-scrollbar-thumb { background-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+html[data-theme="neon"] * { scrollbar-color: color-mix(in srgb, var(--accent) 55%, transparent) transparent; }
+.bm-link { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border: 1px dashed var(--pri); border-radius: 999px; color: var(--pri); text-decoration: none; font-weight: 700; cursor: grab; }
+.bm-link .ic { width: 14px; height: 14px; }
+.add-tools { gap: 14px; }

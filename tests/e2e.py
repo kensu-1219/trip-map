@@ -224,7 +224,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(1500)
     check('呼叫路線服務（OSRM）取得實際路線', calls['osrm'] > 0, f"{calls['osrm']} 次")
     txt = page.inner_text('#tabBody')
-    check('顯示日期與星期', '12/20（日）' in txt, '')
+    check('顯示日期與星期', '12/20 週日' in txt, '')
     check('顯示每天移動時間/距離', '移動' in txt and 'km' in txt)
     page.screenshot(path=f'{OUT}/05_plan_3days.png')
     page.click('#sheetHandle'); page.wait_for_timeout(400)
@@ -351,6 +351,17 @@ with sync_playwright() as p:
     n2 = page2.evaluate('TripApp.trip().places.length'); n1 = page.evaluate('TripApp.trip().places.length')
     check('另一台裝置開分享連結 → 匯入同樣地點與分天', n2 == n1 and page2.evaluate('TripApp.trip().base.name') == '一蘭 拉麵 新宿店', f'{n2}/{n1}')
     check('分享連結帶上每段備註', page2.evaluate("Object.values(TripApp.trip().legNotes).join()") == page.evaluate("Object.values(TripApp.trip().legNotes).join()") != '')
+    # 新增頁：貼上剛複製的連結、書籤按鈕
+    page2.context.grant_permissions(['clipboard-read', 'clipboard-write'])
+    page2.click('#tabs button[data-tab=add]'); page2.wait_for_timeout(200)
+    page2.evaluate("navigator.clipboard.writeText('https://www.google.com/maps/place/%E6%B5%85%E8%8D%89%E9%A7%85/@35.7113,139.7976,17z')")
+    page2.click('[data-act=pasteAdd]'); page2.wait_for_timeout(800)
+    check('「貼上剛複製的連結」直接加入', page2.evaluate("TripApp.trip().places.some(p=>p.name.includes('浅草駅'))"))
+    bm = page2.locator('a.bm-link').get_attribute('href') or ''
+    check('電腦書籤按鈕指向 ?add=', bm.startswith('javascript:') and '?add=' in bm)
+    page2.click('#btnSettings'); page2.wait_for_timeout(200)
+    check('設定裡有「檢查更新並重新整理」', page2.locator('[data-mact=update]').count() == 1)
+    page2.click('[data-mact=close]')
     # 外部一鍵加入（iOS 捷徑／書籤按鈕會開 ?add=）
     import urllib.parse as _up
     page2.goto(BASE + '?add=' + _up.quote('https://www.google.com/maps/place/%E6%9D%B1%E4%BA%AC%E9%A7%85/@35.6812,139.7671,17z'))
@@ -442,12 +453,13 @@ with sync_playwright() as p:
     vp.fill('#dayStart', '09:00'); vp.dispatch_event('#dayStart', 'change'); vp.wait_for_timeout(200)
     check('行程頁不再顯示停留與花費', '停留' not in vp.inner_text('#tabBody') and '預估總花費' not in vp.inner_text('#tabBody'))
     first = vp.evaluate('TripApp.C.dayStops(TripApp.trip(),1)[0].id')
-    vp.click(f'.stop[data-id="{first}"] [data-act=toggleDone]'); vp.wait_for_timeout(200)
-    check('打卡：標記已去過、地圖標記變灰', vp.evaluate(f'TripApp.trip().places.find(p=>p.id=="{first}").done') and vp.locator('.pin.done').count() == 1)
+    check('打卡功能已拿掉（行程列、地點視窗都沒有）', vp.locator('[data-act=toggleDone]').count() == 0)
+    check('整天導航只剩圖示按鈕', '整天導航' not in vp.inner_text('#tabBody') and vp.locator('.day-tools a.icon-btn').count() >= 1)
+    check('標題列沒有左上角圖案', vp.locator('#logo').count() == 0)
     vp.screenshot(path=f'{OUT}/19_categories_done.png')
     # 編輯分類
     vp.click(f'.stop[data-id="{first}"] [data-act=edit]')
-    check('編輯地點沒有花費、天數、停留欄位', vp.locator('#eCost, #eDay, #eStay').count() == 0)
+    check('編輯地點沒有花費、天數、停留、用餐、打卡欄位', vp.locator('#eCost, #eDay, #eStay, #eMeal, #eDone').count() == 0)
     vp.click('.catopt[data-cat=food]'); vp.click('[data-mact=ok]'); vp.wait_for_timeout(150)
     check('編輯時可改分類', vp.evaluate(f'TripApp.trip().places.find(p=>p.id=="{first}").cat') == 'food')
     # 地點分頁分類篩選
@@ -496,7 +508,7 @@ with sync_playwright() as p:
     vp.fill('#startDate', today); vp.dispatch_event('#startDate', 'change'); vp.wait_for_timeout(400)
     vp.reload(); vp.wait_for_selector('#tabBody'); vp.wait_for_timeout(1500)
     body = vp.inner_text('#tabBody')
-    check('今天模式：顯示「今天是 DAY 01」與下一站', ('今天是第 1 天' in body or '今天是DAY01' in body.replace(' ', '')) and '下一站' in body)
+    check('今天模式：顯示「今天是 DAY 01」與下一站', ('今天是第 1 天' in body or '今天是DAY01' in body.replace(' ', '')) and ('下一站' in body or '都走完了' in body))
     check('今天模式：自動只看今天', vp.evaluate('TripApp.S.ui.dayFilter') == 1)
     check('天氣：顯示預報（Open-Meteo）', vp.locator('.wx').count() >= 1 and '8°/14°' in vp.inner_text('.wx'), vp.inner_text('.wx') if vp.locator('.wx').count() else '')
     vp.screenshot(path=f'{OUT}/25_today_weather.png')
