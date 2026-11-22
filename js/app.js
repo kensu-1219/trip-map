@@ -7,7 +7,7 @@
   const catIc = (c) => I('c_' + (C.CATS[c] ? c : 'other'));
   const dc = (d) => { const pal = (THEME_PAL[activeTheme()] || C.PALETTE); return d > 0 ? pal[(d - 1) % pal.length] : 'var(--muted)'; };
   const stepIc = (e) => I(/🚌|🚎/.test(e) ? 'bus' : /⛴/.test(e) ? 'ferry' : 'transit');
-  const VERSION = '1.15.0';
+  const VERSION = '1.15.1';
   const STORE_KEY = 'tripmap.v1';
   const $ = (s, el) => (el || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -328,17 +328,17 @@
     return '<div class="pop">' + (u ? '<div class="pop-photo" style="background-image:' + cssUrl(u) + '">' +
       (p.photo.src === 'wiki' && p.photo.link ? '<a class="credit" href="' + esc(p.photo.link) + '" target="_blank" rel="noopener">圖片：Wikipedia</a>' : '<span class="credit">圖片：Google</span>') + '</div>' : '') +
       '<b>' + esc(p.name) + '</b>' +
-      (isBase ? '<div class="muted">住宿（每天起終點）</div>' : '<div class="muted">' + (p.day ? 'Day ' + p.day + ' · 第 ' + (p.order + 1) + ' 站' : '尚未排入行程') + '</div>') +
-      (isBase ? '' : '<div class="muted">' + catIc(p.cat) + ' ' + C.CATS[p.cat].label + (p.hours ? ' · ' + I('clock') + ' ' + esc(p.hours) : '') + '</div>' +
+      '<div class="pop-meta">' + (isBase ? '<span class="pop-chip">住宿</span>' : (p.day ? '<span class="pop-chip" style="--c:' + dc(p.day) + '">第 ' + p.day + ' 天 · 第 ' + (p.order + 1) + ' 站</span>' : '<span class="pop-chip">未排入</span>') + '<span class="muted">' + catIc(p.cat) + ' ' + C.CATS[p.cat].label + '</span>') + '</div>' +
+      (isBase ? '' : (p.hours ? '<div class="muted small">' + I('clock') + ' ' + esc(p.hours) + '</div>' : '') +
         (!p.hours && p.hoursWeek ? '<div class="muted small">' + I('clock') + ' ' + esc(C.weekSummary(p.hoursWeek)) + '</div>' : '')) +
       (p.note ? '<div class="note">' + esc(p.note) + '</div>' : '') +
-      '<div class="pop-btns">' +
-      (isBase ? '' : '<button class="btn sm" data-act="toggleDone" data-id="' + p.id + '">' + I(p.done ? 'done' : 'undone') + (p.done ? ' 已去過' : ' 打卡') + '</button>') +
-      placeA(p, 'btn sm', I('ext') + ' 開啟地圖') +
-      '<button class="btn sm" data-act="measureFrom" data-id="' + p.id + '">從這裡量</button>' +
-      '<button class="btn sm" data-act="measureTo" data-id="' + p.id + '">量到這裡</button>' +
-      '<button class="btn sm" data-act="nearbyFrom" data-id="' + p.id + '">' + I('search') + ' 附近</button>' +
-      (isBase ? '' : '<button class="btn sm" data-act="edit" data-id="' + p.id + '">編輯</button>') +
+      '<div class="pop-grid">' +
+      placeA(p, 'pg-btn', I('nav') + '<span>導航</span>') +
+      '<button class="pg-btn" data-act="nearbyFrom" data-id="' + p.id + '">' + I('search') + '<span>附近</span></button>' +
+      (isBase ? '' : '<button class="pg-btn' + (p.done ? ' on' : '') + '" data-act="toggleDone" data-id="' + p.id + '">' + I(p.done ? 'done' : 'undone') + '<span>' + (p.done ? '已去過' : '打卡') + '</span></button>') +
+      '<button class="pg-btn" data-act="measureFrom" data-id="' + p.id + '">' + I('measure') + '<span>從這裡量</span></button>' +
+      '<button class="pg-btn" data-act="measureTo" data-id="' + p.id + '">' + I('measure') + '<span>量到這裡</span></button>' +
+      (isBase ? '' : '<button class="pg-btn" data-act="edit" data-id="' + p.id + '">' + I('edit') + '<span>編輯</span></button>') +
       '</div></div>';
   }
 
@@ -842,32 +842,35 @@
     return h;
   }
 
+  /** 清單式選項列：左邊圖示、標題、一行說明、右箭頭 */
+  const optRow = (act, ic, title, sub, extra) => '<button class="opt-row" data-act="' + act + '"' + (extra || '') + '><span class="opt-ic">' + ic + '</span><span class="opt-t"><b>' + title + '</b><small>' + sub + '</small></span><span class="opt-go">' + I('next') + '</span></button>';
   function renderAdd() {
     const geo = S.ui.geo;
-    let h = itinHtml() + nearbyHtml() + sec('// Add · 新增地點') + '<label class="lbl">貼上 Google Maps 連結、座標或地名（可一次貼多行）</label>' +
-      '<textarea id="addInput" rows="3" placeholder="例：https://www.google.com/maps/place/...&#10;或：35.7148, 139.7967&#10;或：清水寺"></textarea>' +
-      '<div class="row gap"><button class="btn primary grow" data-act="addGo">加入／搜尋</button><button class="btn" data-act="pickAdd">' + I('map') + ' 在地圖上點</button></div>';
+    let h = sec('// Add · 新增地點') +
+      '<div class="add-box"><textarea id="addInput" rows="1" placeholder="地名、Google Maps 連結或座標"></textarea>' +
+      '<button class="btn primary" data-act="addGo">' + I('search') + ' 搜尋</button></div>' +
+      '<div class="add-tools"><button class="linkbtn" data-act="pickAdd">' + I('map') + ' 在地圖上點一下新增</button><span class="muted small">可一次貼多行</span></div>';
     if (S.ui.addMsg) h += '<div class="msg">' + S.ui.addMsg + '</div>';
     if (S.ui.results) {
-      h += '<div class="results"><div class="muted">搜尋結果（' + (S.ui.results.source || '') + '）— 點一下加入：</div>' +
-        (S.ui.results.list.length ? S.ui.results.list.map((r, i) => '<button class="result" data-act="pickResult" data-i="' + i + '">' + catIc(r.cat || C.guessCat(r.name)) + ' <b>' + esc(r.name) + '</b><br><span class="muted">' + esc(r.address) + '</span></button>').join('') : '<div class="empty sm">找不到，換個關鍵字（加上城市名通常有幫助）</div>') + '</div>';
+      h += '<div class="results"><div class="muted small">搜尋結果（' + (S.ui.results.source || '') + '）· 點一下加入</div>' +
+        (S.ui.results.list.length ? S.ui.results.list.map((r, i) => '<button class="result" data-act="pickResult" data-i="' + i + '"><span class="r-ic">' + catIc(r.cat || C.guessCat(r.name)) + '</span><span class="r-t"><b>' + esc(r.name) + '</b><small>' + esc(r.address) + '</small></span></button>').join('') : '<div class="empty sm">找不到，換個關鍵字（加上城市名通常有幫助）</div>') + '</div>';
     }
     if (geo) {
       h += '<div class="msg">' + I('search') + ' 正在查詢沒有座標的地點：' + geo.done + ' / ' + geo.total + (geo.failed.length ? '，找不到 ' + geo.failed.length + ' 個' : '') + (geo.done < geo.total ? '（每秒約 1 個）' : ' — 完成') + '</div>';
       if (geo.done >= geo.total && geo.failed.length) h += '<div class="msg warn">找不到座標：' + geo.failed.map(esc).join('、') + '<br>可以在上方用地名＋城市重新搜尋。</div>';
     }
-    h += '<hr>' + sec('// Flights · 機票') +
-      '<div class="row gap"><button class="btn primary grow" data-act="ticket">' + catIc('airport') + ' 匯入機票（電子機票 PDF／登機證截圖）</button><button class="btn" data-act="ticketPaste" title="貼上確認信文字">' + I('text') + ' 貼上</button></div>' +
-      '<div class="muted small">不用 AI：讀登機證條碼（國際標準），或電子機票收據的固定範本。讀到後會設定機場、出發日，並排出國那天幾點出門。</div>' +
-      '<hr>' + sec('// Import · 匯入') +
-      '<button class="btn block" data-act="import">' + I('folder') + ' 選擇檔案（Google 已儲存清單 .csv／已加星號 .json／My Maps .kml／本工具備份 .json）</button>' +
-      '<details><summary>怎麼把 Google Maps 存的地點整批匯出？</summary><ol class="help">' +
+    h += nearbyHtml();
+    h += sec('// More · 其他加入方式') + '<div class="opt-list">' +
+      optRow('itinToggle', I('text'), '貼上行程文字', 'ChatGPT、部落格的行程，自動分天並標上地圖') +
+      optRow('import', I('folder'), '匯入檔案', 'Google 已儲存清單 .csv、My Maps .kml、備份 .json') + '</div>';
+    if (S.ui.itinOpen || S.ui.itin) h += itinHtml();
+    h += '<details class="help-d"><summary>怎麼把 Google Maps 存的地點整批匯出？</summary><ol class="help">' +
       '<li>電腦開 <a href="https://takeout.google.com/" target="_blank" rel="noopener">takeout.google.com</a>，先按「取消全選」。</li>' +
-      '<li>只勾「<b>已儲存</b>」（Saved，各清單 .csv）和「<b>地圖（你的地點）</b>」（已加星號 .json）。</li>' +
+      '<li>只勾「<b>已儲存</b>」（各清單 .csv）和「<b>地圖（你的地點）</b>」（已加星號 .json）。</li>' +
       '<li>建立匯出 → 下載 zip → 解壓縮，把 .csv 或 .json 選進來。</li>' +
       '<li>.csv 沒有座標，工具會自動用地名查（填了 Google 金鑰會更準）。</li>' +
       '<li>Google 我的地圖（My Maps）可用「匯出為 KML」，選「KML」而不是 KMZ。</li></ol></details>' +
-      '<details><summary>手機分享出來的 maps.app.goo.gl 短網址？</summary><p class="help">短網址看不到座標，工具會改用連結前面的店名／地址搜尋。想要最準：在 Safari 打開短網址，等它跳到完整網址，再從網址列複製貼上。</p></details>';
+      '<details class="help-d"><summary>手機分享出來的 maps.app.goo.gl 短網址？</summary><p class="help">短網址看不到座標，工具會改用連結前面的店名／地址搜尋。想要最準：在 Safari 打開短網址，等它跳到完整網址，再從網址列複製貼上。</p></details>';
     return h;
   }
 
@@ -1048,9 +1051,8 @@
     const it = S.ui.itin;
     let h = sec('// Paste · 貼上行程文字');
     if (!it) {
-      return h + '<details class="itin-box"' + (S.ui.itinOpen ? ' open' : '') + '><summary>' + I('text') + ' 把 ChatGPT 或部落格的行程貼進來，自動分天、標上地圖</summary>' +
-        '<textarea id="itinInput" rows="6" placeholder="例如：&#10;Day 1：淺草・上野&#10;- 上午：淺草寺&#10;- 下午：東京晴空塔&#10;Day 2&#10;- 明治神宮"></textarea>' +
-        '<button class="btn primary block" data-act="itinParse">' + I('auto') + ' 解析行程</button></details>';
+      return h + '<div class="itin-box"><textarea id="itinInput" rows="6" placeholder="例如：&#10;Day 1：淺草・上野&#10;- 上午：淺草寺&#10;- 下午：東京晴空塔&#10;Day 2&#10;- 明治神宮"></textarea>' +
+        '<div class="row gap"><button class="btn primary grow" data-act="itinParse">' + I('auto') + ' 解析行程</button><button class="btn" data-act="itinToggle">收起</button></div></div>';
     }
     if (it.running || it.done) {
       const all = it.days.reduce((a, d) => a + d.items.filter((x) => x.on).length, 0);
@@ -1122,7 +1124,7 @@
   /* ================= 附近搜尋 ================= */
   function nearbyHtml() {
     const nb = S.ui.nearby;
-    if (!nb) return sec('// Nearby · 附近') + '<div class="row gap wrap"><button class="btn" data-act="nearbyCenter">' + I('search') + ' 搜尋地圖中心附近</button><span class="muted small">或點地圖上的地點 →「附近」</span></div>';
+    if (!nb) return '<div class="opt-list">' + optRow('nearbyCenter', I('search'), '找附近', '地圖中心附近的餐廳、咖啡、便利商店、車站…（也可在地點視窗按「附近」）') + '</div>';
     let h = sec('// Nearby · ' + esc(nb.origin.name) + ' 附近') +
       '<div class="chips catchips">' + Object.entries(C.NEARBY).map(([k, v]) => '<button class="chip ic-chip' + (nb.kind === k ? ' on' : '') + '" data-act="nearbyKind" data-k="' + k + '">' + catIc(v.cat === 'other' ? (k === 'toilet' ? 'other' : 'other') : v.cat) + ' ' + v.label + '</button>').join('') +
       '<button class="chip ic-chip" data-act="nearbyClose" title="關閉">' + I('close') + '</button></div>';
@@ -1134,7 +1136,7 @@
         I('walk') + ' ' + C.fmtDist(r.dist * 1.25) + ' · 約 ' + C.fmtDur(C.estimateLeg(r.dist, 'walk').duration) + (r.sub ? ' · ' + esc(r.sub.slice(0, 50)) : '') + '</span></span>' +
         navA(nb.origin, r, 'walk', 'icon-btn sm', I('nav'), '步行導航') +
         (r.added ? '<span class="icon-btn sm tick on" title="已加入">' + I('check') + '</span>' : '<button class="icon-btn sm" data-act="nearbyAdd" data-i="' + i + '" title="加入行程地點">' + I('add') + '</button>') + '</div>').join('') + '</div>' +
-        '<div class="muted small">資料來源：OpenStreetMap 社群（可能不完整）</div>';
+        '<div class="muted small">資料來源：' + (nb.source === 'google' ? 'Google 地圖' : 'OpenStreetMap 社群（可能不完整）') + '</div>';
     }
     return h;
   }
@@ -1142,8 +1144,12 @@
     const nb = S.ui.nearby; if (!nb) return;
     nb.kind = kind; nb.loading = true; nb.error = ''; nb.list = null; renderPanel(true);
     try {
-      nb.list = await SV.nearby(kind, nb.origin, kind === 'station' || kind === 'sight' ? 1200 : 700);
-    } catch (e) { nb.error = '搜尋失敗：' + e.message + '（沒有網路或服務忙碌，稍後再試）'; }
+      const r = await SV.nearby(kind, nb.origin, kind === 'station' || kind === 'sight' ? 1200 : 700, settings());
+      nb.list = r.list; nb.source = r.source;
+    } catch (e) {
+      const why = e && (e.name === 'AbortError' || /abort|timeout/i.test(e.message || '')) ? '伺服器太久沒回應' : (e && e.message) || '連線失敗';
+      nb.error = '附近搜尋暫時連不上（' + why + '），稍後再試。' + (settings().gkey ? '' : '填了 Google 金鑰會改用 Google，比較穩。');
+    }
     nb.loading = false;
     nearbyLayer.clearLayers();
     if (nb.list) {
@@ -1193,7 +1199,9 @@
   }
   function renderBookings() {
     const t = trip();
-    let h = sec('// Bookings · 機票、住宿、交通、票券');
+    let h = sec('// Bookings · 機票、住宿、交通、票券') +
+      '<div class="opt-list">' + optRow('ticket', catIc('airport'), '匯入機票', '電子機票 PDF 或登機證截圖，自動填機場、時間與出門時間') +
+      optRow('ticketPaste', I('text'), '貼上確認信文字', '從航空公司確認信複製整段貼上') + '</div>';
     if (!t.bookings.length) h += '<div class="empty sm">還沒有預訂。把機票、飯店、車票、門票的時間和確認碼記在這裡，會自動出現在當天的行程裡。</div>';
     const list = t.bookings.slice().sort((a, b) => ((a.date || '9') + (a.time || '')).localeCompare((b.date || '9') + (b.time || '')));
     h += list.map((b) => {
@@ -2118,6 +2126,7 @@
         case 'autoplan': autoplan(); break;
         case 'restorePlan': restorePlan(); break;
         case 'setHome': setHomeModal(); break;
+        case 'itinToggle': S.ui.itinOpen = !S.ui.itinOpen; if (!S.ui.itinOpen) S.ui.itin = null; renderPanel(true); if (S.ui.itinOpen) setTimeout(() => { const x = $('#itinInput'); if (x) x.focus(); }, 50); break;
         case 'ticket': $('#ticketInput').click(); break;
         case 'ticketPaste': ticketPasteModal(); break;
         case 'setupToggle': { const t = trip(); try { localStorage.setItem('tripmap.setup.' + t.id, planSetupOpen(t) ? '0' : '1'); } catch (e) { /* 私密模式 */ } renderAll(true); break; }

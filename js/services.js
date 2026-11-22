@@ -175,12 +175,38 @@
   }
 
   const overpassQueue = makeQueue(1, 1000);
-  async function nearby(kind, origin, radius) {
+  // OpenStreetMap 的 Overpass 主站常塞車：依序試幾個公開鏡像站，每個最多等 9 秒
+  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+  let overpassGood = 0;
+  async function nearbyOSM(kind, origin, radius) {
     const q = C.overpassQuery(kind, origin.lat, origin.lng, radius || 700);
-    const j = await overpassQueue(() => fetchJSON('https://overpass-api.de/api/interpreter', {
-      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q),
-    }, 20000));
-    return C.parseOverpass(j, origin, kind);
+    let err;
+    for (let i = 0; i < OVERPASS.length; i++) {
+      const ix = (overpassGood + i) % OVERPASS.length;
+      try {
+        const j = await overpassQueue(() => fetchJSON(OVERPASS[ix], {
+          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q),
+        }, 9000));
+        overpassGood = ix;
+        return { list: C.parseOverpass(j, origin, kind), source: 'osm' };
+      } catch (e) { err = e; }
+    }
+    throw err || new Error('OpenStreetMap 附近搜尋暫時連不上');
+  }
+  /** 附近：有 Google 金鑰用 Google（快、有評分與營業時間），否則或失敗時用 OpenStreetMap */
+  async function nearby(kind, origin, radius, settings) {
+    const key = settings && settings.gkey;
+    if (key && C.NEARBY_G[kind]) {
+      try {
+        const j = await googleQueue(() => fetchJSON('https://places.googleapis.com/v1/places:searchNearby', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': C.cleanKey(key), 'X-Goog-FieldMask': 'places.displayName,places.location,places.primaryType,places.primaryTypeDisplayName,places.rating,places.userRatingCount,places.googleMapsUri,places.regularOpeningHours.weekdayDescriptions' },
+          body: JSON.stringify({ includedTypes: C.NEARBY_G[kind], maxResultCount: 20, rankPreference: 'DISTANCE', languageCode: 'zh-TW', locationRestriction: { circle: { center: { latitude: origin.lat, longitude: origin.lng }, radius: radius || 700 } } }),
+        }, 12000));
+        return { list: C.parseGoogleNearby(j, origin, kind), source: 'google' };
+      } catch (e) { console.warn('Google 附近搜尋失敗，改用 OpenStreetMap', e); }
+    }
+    return nearbyOSM(kind, origin, radius);
   }
 
   /* ---------- 地點照片 ---------- */

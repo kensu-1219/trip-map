@@ -1247,6 +1247,25 @@
     atm: { label: 'ATM／銀行', cat: 'other', q: ['nwr["amenity"~"^(atm|bank)$"]'] },
     sight: { label: '景點', cat: 'landmark', q: ['nwr["tourism"~"^(attraction|museum|viewpoint|gallery)$"]', 'nwr["historic"]["name"]'] },
   };
+  // Google Places（新版）附近搜尋用的類型
+  const NEARBY_G = {
+    food: ['restaurant'], cafe: ['cafe', 'bakery', 'ice_cream_shop', 'dessert_shop', 'coffee_shop'], konbini: ['convenience_store'],
+    station: ['train_station', 'subway_station', 'light_rail_station'], toilet: ['public_bathroom'], atm: ['atm', 'bank'],
+    sight: ['tourist_attraction', 'museum', 'art_gallery', 'historical_landmark'],
+  };
+  function parseGoogleNearby(json, origin, kind) {
+    const k = NEARBY[kind] || {};
+    return ((json && json.places) || []).filter((p) => p.location).map((p) => {
+      const lat = p.location.latitude, lng = p.location.longitude;
+      const rating = p.rating ? '★' + p.rating.toFixed(1) + (p.userRatingCount ? '（' + p.userRatingCount + '）' : '') : '';
+      const week = p.regularOpeningHours ? parseGoogleWeek(p.regularOpeningHours.weekdayDescriptions) : null;
+      return {
+        name: p.displayName ? p.displayName.text : '', lat, lng, dist: haversine(origin, { lat, lng }),
+        sub: [p.primaryTypeDisplayName && p.primaryTypeDisplayName.text, rating].filter(Boolean).join(' · '), hours: '', hoursWeek: week,
+        cat: kind === 'sight' ? catFromGoogleType(p.primaryType) : k.cat || 'other', url: p.googleMapsUri || '',
+      };
+    }).filter((x) => x.name).sort((a, b) => a.dist - b.dist);
+  }
   function overpassQuery(kind, lat, lng, radius) {
     const k = NEARBY[kind]; if (!k) throw new Error('unknown kind');
     const around = '(around:' + Math.round(radius) + ',' + lat.toFixed(6) + ',' + lng.toFixed(6) + ')';
@@ -1389,6 +1408,6 @@
     cleanKey, parseGeoJSON, parseTakeoutCSV, parseKML, newTrip, sanitizeTrip, sanitizePlace, mergePlaces,
     MODES, estimateLeg, suggestMode, gmapsDirUrl, gmapsPlaceUrl, gmapsDayUrl, appleDirUrl, applePlaceUrl, timeline, hm, toMin, centroid, balancedClusters,
     orderStops, planDays, pathLen, dayStops, legKey, parseOsrm, decodePolyline, parseGoogleRoute,
-    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, overpassQuery, parseOverpass, fmtFare, buildICS, CAT_COLOR, BOOK_TYPES, sanitizeBooking, bookingsOn, sanitizeExpense, settle, parseItineraryText, cleanPlaceName, wikiPick, wikiLangs, PHOTO_GEO_CATS, sanitizePhoto, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel, sanitizeFlights, leaveHomeMin, clearDay, removeDay, parseNoteTags, applyNoteTags, placeMeals, dayStartTime, departDeadline, CLEAR_MIN, CHECKIN_MIN,
+    b64urlEncode, b64urlDecode, packTrip, unpackTrip, dayColor, PALETTE, CATS, guessCat, catFromGoogleType, parseHours, hoursWarning, THEMES, NEARBY, NEARBY_G, parseGoogleNearby, overpassQuery, parseOverpass, fmtFare, buildICS, CAT_COLOR, BOOK_TYPES, sanitizeBooking, bookingsOn, sanitizeExpense, settle, parseItineraryText, cleanPlaceName, wikiPick, wikiLangs, PHOTO_GEO_CATS, sanitizePhoto, parseOSMHours, parseGoogleWeek, hoursFor, weekSummary, nightHotel, dayEnds, multiHotel, sanitizeFlights, leaveHomeMin, clearDay, removeDay, parseNoteTags, applyNoteTags, placeMeals, dayStartTime, departDeadline, CLEAR_MIN, CHECKIN_MIN,
   };
 });

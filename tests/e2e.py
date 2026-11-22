@@ -73,6 +73,15 @@ def handle(route):
             {'travelMode': 'TRANSIT', 'transitDetails': {'stopCount': 4, 'transitLine': {'nameShort': '銀座線', 'color': '#f39700', 'vehicle': {'type': 'SUBWAY'}}, 'stopDetails': {'departureStop': {'name': '淺草'}, 'arrivalStop': {'name': '上野'}}}},
             {'travelMode': 'WALK', 'staticDuration': '180s'}]}]}]}
         return route.fulfill(status=200, content_type='application/json', headers={'Access-Control-Allow-Origin': '*'}, body=json.dumps(body))
+    if 'places.googleapis.com/v1/places:searchNearby' in url:
+        calls['gnearby'] = calls.get('gnearby', 0) + 1
+        req = json.loads(route.request.post_data or '{}')
+        c = req['locationRestriction']['circle']['center']
+        body = {'places': [
+            {'displayName': {'text': '測試拉麵 淺草店'}, 'location': {'latitude': c['latitude'] + 0.001, 'longitude': c['longitude']}, 'primaryType': 'ramen_restaurant', 'primaryTypeDisplayName': {'text': '拉麵店'}, 'rating': 4.3, 'userRatingCount': 812},
+            {'displayName': {'text': '測試壽司'}, 'location': {'latitude': c['latitude'] + 0.003, 'longitude': c['longitude']}, 'primaryType': 'sushi_restaurant', 'primaryTypeDisplayName': {'text': '壽司店'}, 'rating': 4.6},
+        ]}
+        return route.fulfill(status=200, content_type='application/json', headers={'Access-Control-Allow-Origin': '*'}, body=json.dumps(body))
     if 'places.googleapis.com/v1/places:searchText' in url:
         calls['gplaces'] = calls.get('gplaces', 0) + 1
         return route.fulfill(status=200, content_type='application/json', headers={'Access-Control-Allow-Origin': '*'}, body=json.dumps({'places': []}))
@@ -483,6 +492,12 @@ with sync_playwright() as p:
     check('附近結果一鍵加入（分類＝餐廳）', vp.evaluate('TripApp.trip().places.length') == before + 1 and added['cat'] == 'food', added['name'])
     check('附近結果自動帶入每週營業時間', added.get('hoursWeek') and added['hoursWeek'][1] == '11:30-21:30')
     vp.screenshot(path=f'{OUT}/27_nearby.png')
+    # 有 Google 金鑰時改用 Google 附近搜尋（評分、類型）
+    vp.evaluate("TripApp.S.data.settings.gkey='AIzaFAKE-nearby'")
+    vp.click('[data-act=nearbyKind][data-k=cafe]'); vp.wait_for_timeout(300); vp.click('[data-act=nearbyKind][data-k=food]'); vp.wait_for_timeout(1200)
+    nb2 = vp.inner_text('#tabBody')
+    check('有金鑰時附近搜尋用 Google（含評分、來源標示）', '測試拉麵 淺草店' in nb2 and '★4.3' in nb2 and 'Google 地圖' in nb2, nb2[:120].replace('\n', ' '))
+    vp.evaluate("TripApp.S.data.settings.gkey=''")
     vp.click('#btnShare'); vp.wait_for_selector('[data-mact=ics]')
     with vp.expect_download() as dl:
         vp.click('[data-mact=ics]')
@@ -545,7 +560,7 @@ with sync_playwright() as p:
     check('之後按導航直接開 Apple 地圖（不再詢問）', any('maps.apple.com' in u for u in reqs) and vp.locator('.navpick').count() == 0, (reqs or [''])[0][:60])
     # v1.9：貼文字變行程
     vp.click('#tabs button[data-tab=add]'); vp.wait_for_timeout(200)
-    vp.click('.itin-box summary')
+    vp.click('[data-act=itinToggle]')
     vp.fill('#itinInput', open(os.path.join(FIX, 'chatgpt_zh.txt'), encoding='utf8').read().replace('澀谷十字路口', '找不到的地方'))
     vp.click('[data-act=itinParse]'); vp.wait_for_selector('.itin-day')
     check('貼上 ChatGPT 行程 → 解析出 3 天', vp.locator('.itin-day').count() == 3 and vp.input_value('#itinCity') == '東京')

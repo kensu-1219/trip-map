@@ -701,3 +701,50 @@ html[data-theme="nier"] .setup-sum::before { content: ""; position: absolute; in
 .tk-lab { display: inline-block; font-size: 11px; padding: 0 6px; margin-right: 6px; border-radius: 4px; background: var(--soft); color: var(--ink-soft); }
 html[data-theme="nier"] .tk-lab { border-radius: 0; background: var(--ink); color: var(--paper); letter-spacing: .1em; }
 html[data-theme="illust"] .tk-seg { border: 0; border-radius: 14px; box-shadow: inset 0 0 0 1.5px var(--line); }
+
+/* ---------- 新增分頁：搜尋框＋選項列 ---------- */
+.add-box { display: flex; gap: 8px; align-items: flex-start; }
+.add-box textarea { flex: 1; min-height: 42px; resize: none; padding: 10px 12px; line-height: 1.4; }
+.add-box textarea:focus { min-height: 84px; }
+.add-box .btn { height: 42px; flex: none; }
+.add-tools { display: flex; justify-content: space-between; align-items: center; margin: 6px 2px 4px; }
+.linkbtn { background: none; border: 0; padding: 4px 0; color: var(--accent, var(--pri)); font: inherit; font-size: 13px; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; }
+.opt-list { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 10px; }
+.opt-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--card); color: var(--ink); font: inherit; cursor: pointer; }
+.opt-row:active { transform: scale(.99); }
+.opt-ic { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 10px; background: var(--soft); color: var(--ink); }
+.opt-ic .ic { width: 20px; height: 20px; }
+.opt-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.opt-t b { font-size: 15px; font-weight: 600; }
+.opt-t small { font-size: 12px; color: var(--muted); line-height: 1.35; }
+.opt-go { color: var(--muted); flex: none; }
+.opt-go .ic { width: 16px; height: 16px; }
+.result { display: flex; gap: 10px; align-items: flex-start; text-align: left; }
+.result .r-ic { flex: none; margin-top: 2px; }
+.result .r-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.result .r-t small { color: var(--muted); font-size: 12px; }
+.help-d { margin: 6px 0; font-size: 13px; }
+.help-d summary { color: var(--muted); cursor: pointer; padding: 4px 0; }
+html[data-style="modern"] .opt-row { border: 0; box-shadow: inset 0 0 0 1px var(--hair); border-radius: 14px; }
+html[data-style="modern"] .opt-ic { border-radius: 12px; }
+html[data-theme="illust"] .opt-row { border: 0; border-radius: 16px; box-shadow: inset 0 0 0 1.5px var(--line), 3px 3px 0 #ecdcbd; }
+html[data-theme="illust"] .opt-ic { border-radius: 50%; background: #fde3cf; color: var(--pri); }
+html[data-theme="nier"] .opt-row { border-radius: 0; border-color: var(--hair); background: linear-gradient(var(--pri), var(--pri)) no-repeat 0 0 / 0% 100%, var(--card); transition: background-size .22s ease-out, color .18s; }
+html[data-theme="nier"] .opt-row:hover { background-size: 100% 100%, auto; color: var(--on-pri); }
+html[data-theme="nier"] .opt-row:hover small { color: var(--on-pri); }
+html[data-theme="nier"] .opt-ic { border-radius: 0; background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
+
+/* ---------- 地點視窗：資訊＋6 格動作 ---------- */
+.pop-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 2px; font-size: 12px; }
+.pop-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 12px; background: var(--soft); color: var(--ink); }
+.pop-chip[style]::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.pop-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+.pg-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 52px; padding: 6px 2px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink) !important; font: 12px var(--sans); text-decoration: none; cursor: pointer; }
+.pg-btn .ic { width: 18px; height: 18px; }
+.pg-btn.on { background: var(--ok); color: #fff !important; border-color: var(--ok); }
+html[data-style="modern"] .pg-btn { border: 0; background: var(--soft); }
+html[data-theme="illust"] .pg-btn { border-radius: 14px; border: 0; box-shadow: inset 0 0 0 1.5px var(--line); }
+html[data-theme="nier"] .pg-btn { border-radius: 0; border-color: var(--hair); letter-spacing: .06em; }
+html[data-theme="nier"] .pop-chip { border-radius: 0; background: var(--ink); color: var(--paper); }
+.pop-meta .muted { margin: 0; }
+.leaflet-popup-content { min-width: 240px; }
